@@ -1,12 +1,4 @@
-<<<<<<< HEAD
 cmake_build
 mbed-os
 .mbed
 .mbedbuild
-=======
-.vscode
-<<<<<<< HEAD
->>>>>>> 493ab82... chore: add rs in editorconfig and ignore .vscode
-=======
-.DS_Store
->>>>>>> ad5bc47... feat(bug-backend): move audio into backend dir as workspace member
