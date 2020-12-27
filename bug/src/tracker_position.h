@@ -8,32 +8,78 @@
 #include "mbed.h"
 #include "noise_gate.h"
 
-#define calc_displacement(a1, a2, t1, t2) \
-  ((a2 + a1) * (t2 - t1) * (t2 - t1) / 4)
-#define calc_distance(d) std::sqrt(d[0] * d[0] + d[1] * d[1] + d[2] * d[2])
-
-// #define SAMPLE_RATE 30ms
-#define SAMPLE_RATE 3s
+#define SAMPLE_RATE 30ms
+#define SAMPLE_NOISE_2 3
+// TODO: tune the down scale
+#define SAMPLE_POSITION_DOWN_SCALE 100000
 #define NOISE_GATE_THRESHOULD 10
-#define NOISE_GATE_RELEASE_COUNT 0.5s / SAMPLE_RATE
+#define NOISE_GATE_RELEASE_COUNT 0.3s / SAMPLE_RATE
 
-struct DXYZ {
-  time_t value[3];
+class Acceleration {
+ public:
+  int16_t bias[3];
+  int16_t last[3];
+  int16_t curr[3];
+  int64_t ts_last;
+  int64_t ts_curr;
 
-  inline bool operator>(time_t rhs) { return calc_distance(value) > rhs; }
+  Acceleration() : curr{0}, ts_curr(0) {
+    BSP_ACCELERO_AccGetXYZ(bias);
+    sample();
+  }
+
+  inline bool operator>(int64_t rhs) {
+    return std::abs(curr[0]) > rhs || std::abs(curr[1]) > rhs ||
+           std::abs(curr[2]) > rhs;
+  }
+
+  void sample() {
+    ts_last = ts_curr;
+    ts_curr = rtos::Kernel::get_ms_count();
+    std::memcpy(last, curr, sizeof(curr));
+    BSP_ACCELERO_AccGetXYZ(curr);
+    log_traceln("acceleration x: %ld, y: %ld, z: %ld", curr[0], curr[1],
+                curr[2]);
+    // TODO: filter vibration peak
+    curr[0] -= bias[0];
+    curr[1] -= bias[1];
+    curr[2] -= bias[2];
+  }
+
+  void apply_velocify_and_position(int32_t* velocity, int32_t* position) {
+    int64_t duration = ts_curr - ts_last;
+    int16_t sum[3] = {
+        curr[0] + last[0],
+        curr[1] + last[1],
+        curr[2] + last[2],
+    };
+
+    *velocity +=
+        (std::abs(sum[0]) > SAMPLE_NOISE_2 ? sum[0] : 0) * duration / 2;
+    *(velocity + 1) +=
+        (std::abs(sum[1]) > SAMPLE_NOISE_2 ? sum[1] : 0) * duration / 2;
+    *(velocity + 2) +=
+        (std::abs(sum[2]) > SAMPLE_NOISE_2 ? sum[2] : 0) * duration / 2;
+
+    *position += *velocity * duration / SAMPLE_POSITION_DOWN_SCALE;
+    *(position + 1) += *(velocity + 1) * duration / SAMPLE_POSITION_DOWN_SCALE;
+    *(position + 2) += *(velocity + 2) * duration / SAMPLE_POSITION_DOWN_SCALE;
+  }
 };
 
-class PositionTracker : Sink<DXYZ> {
+class PositionTracker : Sink<Acceleration> {
   typedef PositionTracker Self;
 
  public:
   PositionTracker(BugEventClient* client)
       : _client(client),
-        _noise_gate(new NoiseGate<DXYZ, time_t>(
+        _noise_gate(new NoiseGate<Acceleration, int64_t>(
             NOISE_GATE_THRESHOULD, NOISE_GATE_RELEASE_COUNT, this)),
         _thread(new rtos::Thread),
         _event_queue(new events::EventQueue),
-        _sample_ts(0),
+        _acceleration(NULL),
+        _velocity{0},
+        _position{0},
         _event_time_range(TimeRange()),
         _event_position(NULL) {
     _event_queue->call(this, &Self::init_callback);
@@ -41,7 +87,7 @@ class PositionTracker : Sink<DXYZ> {
 
  protected:
   void start() {
-    _event_queue->call_every(SAMPLE_RATE, this, &Self::update_state_callback);
+    _event_queue->call_every(SAMPLE_RATE, this, &Self::sample_callback);
     _thread->start(
         mbed::callback(_event_queue, &events::EventQueue::dispatch_forever));
   }
@@ -54,44 +100,26 @@ class PositionTracker : Sink<DXYZ> {
     if (accelero_ret != ACCELERO_StatusTypeDef::ACCELERO_OK) {
       log_errorln("failed to init accelero, error: %d", accelero_ret);
     }
-    BSP_ACCELERO_AccGetXYZ(_acc_bias);
-    BSP_ACCELERO_AccGetXYZ(_acc);
+    _acceleration = new Acceleration;
   }
 
-  void update_state_callback() {
-    int16_t last_acc[3];
-    std::memcpy(last_acc, _acc, 3 * sizeof(int16_t));
-    BSP_ACCELERO_AccGetXYZ(_acc);
-    log_traceln("acc: {x : %d, y : %d, z : %d}", _acc[0], _acc[1], _acc[2]);
-
-    time_t last_sample_ts = _sample_ts;
-    _sample_ts = time(NULL);
-
-    _noise_gate->process(DXYZ{{
-        calc_displacement(last_acc[0] - _acc_bias[0], _acc[0] - _acc_bias[0],
-                          last_sample_ts, _sample_ts),
-        calc_displacement(last_acc[1] - _acc_bias[1], _acc[1] - _acc_bias[1],
-                          last_sample_ts, _sample_ts),
-        calc_displacement(last_acc[2] - _acc_bias[2], _acc[2] - _acc_bias[2],
-                          last_sample_ts, _sample_ts),
-    }});
+  void sample_callback() {
+    _acceleration->sample();
+    _noise_gate->process(*_acceleration);
   }
 
   // give access for NoiseGate for sink implementation
-  friend class NoiseGate<DXYZ, time_t>;
+  friend class NoiseGate<Acceleration, int64_t>;
 
   // implement Sink
-  virtual void record(DXYZ dxyz) {
+  virtual void record(Acceleration& _) {
     if (_event_position == NULL) {
-      _event_time_range.started_at = _sample_ts;
+      _event_time_range.started_at = _acceleration->ts_curr;
       _event_position = new Position();
-      _event_position->from.x = dxyz.value[0];
-      _event_position->from.y = dxyz.value[1];
-      _event_position->from.z = dxyz.value[2];
+      std::memset(_velocity, 0, sizeof(_velocity));
+      std::memcpy(_event_position->from, _position, sizeof(_position));
     }
-    _event_position->to.x += dxyz.value[0];
-    _event_position->to.y += dxyz.value[1];
-    _event_position->to.z += dxyz.value[2];
+    _acceleration->apply_velocify_and_position(_velocity, _position);
   }
 
   // implement Sink
@@ -102,22 +130,26 @@ class PositionTracker : Sink<DXYZ> {
     }
 
     // send position event
-    _event_time_range.ended_at = _sample_ts;
-    _client->send(_event_position, _event_time_range);
+    std::memcpy(_event_position->to, _position, sizeof(_position));
+    _event_time_range.ended_at = _acceleration->ts_curr;
+    if (std::memcmp(_event_position->from, _event_position->to,
+                    sizeof(_event_position->from)) != 0) {
+      _client->send(_event_position, _event_time_range);
+    }
 
     // cleanup
-    _event_position = NULL;
     delete _event_position;
+    _event_position = NULL;
   }
 
  private:
   BugEventClient* _client;
-  NoiseGate<DXYZ, time_t>* _noise_gate;
+  NoiseGate<Acceleration, int64_t>* _noise_gate;
   rtos::Thread* _thread;
   events::EventQueue* _event_queue;
-  int16_t _acc_bias[3];
-  int16_t _acc[3];
-  time_t _sample_ts;
+  Acceleration* _acceleration;
+  int32_t _velocity[3];
+  int32_t _position[3];
   TimeRange _event_time_range;
   Position* _event_position;
 };

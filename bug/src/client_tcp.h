@@ -37,6 +37,8 @@ class TCPClient : protected TCPSocket {
 
   void dispatch_forever() { _event_queue->dispatch_forever(); }
 
+  int32_t ntp_secs() { return _wifi->ntp_secs(); }
+
   bool connected() {
     return _wifi->connected() && ((struct ISM43362_socket*)_socket)->connected;
   }
@@ -56,30 +58,25 @@ class TCPClient : protected TCPSocket {
       if (!_wifi->connected()) {
         goto RETRY;
       }
-      log_debugln("_wifi->connected() ok");
 
       ns_ret = TCPSocket::open(_wifi->interface());
       if (ns_ret < 0) {
         ns_log_errorln(ns_ret, "failed to open socket");
         goto RETRY;
       }
-      log_debugln("TCPSocket::open ok");
 
       ns_ret = TCPSocket::connect(_socket_address);
       if (ns_ret < 0) {
         ns_log_errorln(ns_ret, "failed to connect address");
         goto RETRY;
       }
-      log_debugln("TCPSocket::connect ok");
 
       break;
 
     RETRY:
       if (ns_ret < 0) {
         TCPSocket::close();
-        log_debugln("close ok");
         _wifi->report_error(ns_ret);
-        log_debugln("report_error ok");
       }
       rtos::ThisThread::sleep_for(std::chrono::milliseconds(3s));
       continue;

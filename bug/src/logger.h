@@ -1,6 +1,7 @@
 #ifndef __LOGGER_H__
 #define __LOGGER_H__
 
+#include "config.h"
 #include "mbed.h"
 
 #define __logln(level, msg, ...) \

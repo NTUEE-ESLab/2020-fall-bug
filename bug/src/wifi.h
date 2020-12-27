@@ -34,7 +34,7 @@ class WIFI {
         _connection_status(NSAPI_STATUS_DISCONNECTED),
         _ssid(ssid),
         _password(password),
-        _ntp_synced(false) {
+        _ntp_secs(0) {
     _wifi->attach(mbed::callback(this, &Self::status_change_callback));
     _event_queue->call(this, &Self::connect_callback);
   }
@@ -54,6 +54,8 @@ class WIFI {
     return _connection_status == NSAPI_STATUS_LOCAL_UP ||
            _connection_status == NSAPI_STATUS_GLOBAL_UP;
   }
+
+  int32_t ntp_secs() { return _ntp_secs; }
 
   void report_error(nsapi_error_t ns_err) {
     log_debugln("report_error, ns_err: %d", ns_err);
@@ -98,7 +100,7 @@ class WIFI {
 
  private:
   int sync_timestamp() {
-    if (_ntp_synced) return 0;
+    if (_ntp_secs > 0) return 0;
 
     log_debugln("try to sync timestamp");
 
@@ -120,12 +122,11 @@ class WIFI {
 
     // info to show current time
     ts = time(NULL);
+    _ntp_secs = ts;
     struct tm* ts_tm = localtime(&ts);
     char ts_str[32];
     strftime(ts_str, 32, "%Y/%m/%d %T", ts_tm);
     log_infoln("current time is %s", ts_str);
-
-    _ntp_synced = true;
 
     return 0;
   }
@@ -159,7 +160,7 @@ class WIFI {
   nsapi_connection_status_t _connection_status;
   const char* _ssid;
   const char* _password;
-  bool _ntp_synced;
+  int32_t _ntp_secs;
 };
 
 #endif

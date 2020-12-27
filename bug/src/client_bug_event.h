@@ -31,7 +31,7 @@ class BugEventClient : public TCPClient {
 
   void send(BugEventKind kind, TimeRange& tr) {
     uint8_t* buf = new uint8_t[128];
-    int len = _codec->encode(buf, kind, tr);
+    int len = _codec->encode(buf, kind, tr, ntp_secs());
     TCPClient::send(buf, len);
   }
 
