@@ -14,6 +14,7 @@ use audio::Audio;
 use bincode::deserialize;
 use bytes::{Bytes, BytesMut};
 use futures::stream::{SplitSink, StreamExt};
+use slog::Logger;
 use std::{
     collections::HashMap,
     fs::create_dir_all,
@@ -44,7 +45,11 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn build(&self, database_addr: Addr<Database>) -> anyhow::Result<Addr<AudioServer>> {
+    pub fn build(
+        &self,
+        logger: Logger,
+        database_addr: Addr<Database>,
+    ) -> anyhow::Result<Addr<AudioServer>> {
         let wav_directory = ensure_directory(&self.audio_wav_directory)?;
 
         let socket = bind_udp_socket(self.audio_server_port)?;
@@ -60,6 +65,7 @@ impl Config {
             AudioServer {
                 port: self.audio_server_port,
                 wav_directory,
+                logger,
                 database_addr,
                 sink: SinkWrite::new(sink, ctx),
                 writers: HashMap::new(),
@@ -74,6 +80,7 @@ type UdpSink = SplitSink<UdpFramed<BytesCodec>, UdpSinkItem>;
 pub struct AudioServer {
     port: u16,
     wav_directory: PathBuf,
+    logger: Logger,
     database_addr: Addr<Database>,
     sink: SinkWrite<UdpSinkItem, UdpSink>,
     writers: HashMap<SocketAddr, Addr<AudioHandler>>,
@@ -83,16 +90,16 @@ impl Actor for AudioServer {
     type Context = Context<Self>;
 
     fn started(&mut self, _: &mut Context<Self>) {
-        println!("audio server listen on port {}", self.port);
+        info!(self.logger, "audio server listen on port {}", self.port);
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
-        println!("audio server is stopping");
+        info!(self.logger, "audio server is stopping");
         Running::Stop
     }
 
     fn stopped(&mut self, _: &mut Context<Self>) {
-        println!("audio server stopped");
+        info!(self.logger, "audio server stopped");
     }
 }
 
@@ -109,6 +116,7 @@ impl StreamHandler<UdpStream> for AudioServer {
                 Ok(Audio::<f32>::Spec(spec)) => {
                     let writer = AudioHandler::new(
                         self.wav_directory.clone(),
+                        self.logger.clone(),
                         self.database_addr.clone(),
                         spec,
                     )
@@ -124,8 +132,8 @@ impl StreamHandler<UdpStream> for AudioServer {
                         client_addr,
                     ));
                 }
-                Err(_) => {
-                    // TODO: warning
+                Err(error) => {
+                    warn!(self.logger, "failed to deserialize audio, error: {}", error);
                 }
             },
         }
@@ -133,8 +141,11 @@ impl StreamHandler<UdpStream> for AudioServer {
 }
 
 impl WriteHandler<io::Error> for AudioServer {
-    fn error(&mut self, _: io::Error, _: &mut Self::Context) -> Running {
-        // TODO: warning
+    fn error(&mut self, error: io::Error, _: &mut Self::Context) -> Running {
+        error!(
+            self.logger,
+            "failed to write audio response, error: {:?}", error
+        );
         Running::Continue
     }
 }

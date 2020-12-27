@@ -10,7 +10,7 @@ use uuid::Uuid;
 
 pub const WAV_CHUNK_PAYLOAD_SIZE: usize = 512;
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub enum Audio<S>
 where
     S: Copy + Default,
@@ -36,7 +36,7 @@ pub enum SampleFormat {
     F32,
 }
 
-#[derive(Serialize, Deserialize)]
+#[derive(Serialize, Deserialize, Debug, PartialEq)]
 pub struct WavChunk<S>
 where
     S: Copy + Default,
@@ -47,6 +47,7 @@ where
     pub payload: WavChunkPayload<S>,
 }
 
+#[derive(Debug, PartialEq)]
 pub struct WavChunkPayload<S>(pub [S; WAV_CHUNK_PAYLOAD_SIZE]);
 
 impl<S> WavChunkPayload<S>

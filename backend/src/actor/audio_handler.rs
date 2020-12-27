@@ -1,53 +1,46 @@
-use crate::actor::db::Database;
+use crate::actor::db::{
+    event::{EventKind, NewEvent},
+    Database,
+};
 use actix::{Actor, Addr, Context, Handler, Message, Running};
 use anyhow::anyhow;
 use audio::{Audio, Spec};
 use bincode::deserialize;
 use bytes::BytesMut;
-use hound::WavWriter;
+use event::EventPayload;
+use hound::{WavSpec, WavWriter};
 use serde::de::Deserialize;
-use std::{collections::HashMap, convert::TryInto, fs::File, io::BufWriter, path::PathBuf};
+use slog::Logger;
+use std::{
+    collections::HashMap, convert::TryInto, fmt::Debug, fs::File, io::BufWriter, path::PathBuf,
+};
 use uuid::Uuid;
 
-pub struct AudioHandler {
-    writers: HashMap<Uuid, (u32, WavWriter<BufWriter<File>>)>,
-    wav_directory: PathBuf,
-    spec: Spec,
-    database_addr: Addr<Database>,
+struct AudioWriter {
+    filepath: PathBuf,
+    inner: Option<WavWriter<BufWriter<File>>>,
+    seq: u32,
+    started_at: chrono::DateTime<chrono::Utc>,
 }
 
-impl AudioHandler {
-    pub fn new(wav_directory: PathBuf, database_addr: Addr<Database>, spec: Spec) -> Self {
-        Self {
-            writers: HashMap::new(),
-            wav_directory,
-            spec,
-            database_addr,
-        }
+impl AudioWriter {
+    fn new(filepath: PathBuf, spec: WavSpec) -> anyhow::Result<Self> {
+        Ok(Self {
+            filepath: filepath.clone(),
+            inner: Some(WavWriter::create(filepath, spec)?),
+            seq: 0,
+            started_at: chrono::Utc::now(),
+        })
     }
 
-    fn new_writer(&self, id: Uuid) -> anyhow::Result<WavWriter<BufWriter<File>>> {
-        let mut filepath = self.wav_directory.clone();
-        filepath.push(id.to_string());
-        filepath.set_extension("wav");
-        Ok(WavWriter::create(filepath, self.spec.into())?)
-    }
-
-    fn write<S, HS>(&mut self, buf: BytesMut) -> anyhow::Result<()>
+    fn write<S, HS>(&mut self, wav_chunk: audio::WavChunk<S>) -> anyhow::Result<()>
     where
-        S: Copy + Default + for<'de> Deserialize<'de> + TryInto<HS>,
+        S: Copy + Default + for<'de> Deserialize<'de> + TryInto<HS> + Debug,
         HS: hound::Sample,
     {
-        let audio = deserialize(&buf[..])?;
-        match audio {
-            Audio::WavChunk::<S>(wav_chunk) => {
-                if !self.writers.contains_key(&wav_chunk.id) {
-                    self.writers
-                        .insert(wav_chunk.id, (0, self.new_writer(wav_chunk.id)?));
-                }
-
-                let (seq, writer) = self.writers.get_mut(&wav_chunk.id).unwrap();
-                if *seq < wav_chunk.seq {
+        match self.inner.as_mut() {
+            Some(writer) => {
+                if self.seq < wav_chunk.seq {
                     for &sample in &wav_chunk.payload.0[..] {
                         writer.write_sample(
                             sample
@@ -55,22 +48,124 @@ impl AudioHandler {
                                 .map_err(|_| anyhow!("unexpected try_into error"))?,
                         )?
                     }
-                    *seq = wav_chunk.seq;
+                    self.seq = wav_chunk.seq;
+                }
+                Ok(())
+            }
+            None => Err(anyhow::anyhow!("unexpected write after finalized")),
+        }
+    }
+
+    fn finalize_as_new_event(mut self) -> anyhow::Result<NewEvent> {
+        match self.inner.take() {
+            Some(writer) => {
+                writer.finalize()?;
+                Ok(NewEvent {
+                    kind: EventKind::Sound,
+                    payload: EventPayload::Sound {
+                        wav_file: self.filepath.into_os_string().into_string().unwrap(),
+                    },
+                    started_at: self.started_at,
+                    ended_at: chrono::Utc::now(),
+                })
+            }
+            None => Err(anyhow::anyhow!("unexpected write after finalized")),
+        }
+    }
+}
+
+pub struct AudioHandler {
+    writers: HashMap<Uuid, AudioWriter>,
+    wav_directory: PathBuf,
+    spec: Spec,
+    logger: Logger,
+    database_addr: Addr<Database>,
+}
+
+impl AudioHandler {
+    pub fn new(
+        wav_directory: PathBuf,
+        logger: Logger,
+        database_addr: Addr<Database>,
+        spec: Spec,
+    ) -> Self {
+        Self {
+            writers: HashMap::new(),
+            wav_directory,
+            spec,
+            logger,
+            database_addr,
+        }
+    }
+
+    fn wav_path(&self, id: Uuid) -> PathBuf {
+        let mut filepath = self.wav_directory.clone();
+        filepath.push(id.to_string());
+        filepath.set_extension("wav");
+        filepath
+    }
+
+    fn write<S, HS>(&mut self, buf: BytesMut) -> anyhow::Result<()>
+    where
+        S: Copy + Default + for<'de> Deserialize<'de> + TryInto<HS> + Debug,
+        HS: hound::Sample,
+    {
+        let audio = deserialize(&buf[..])?;
+        match audio {
+            Audio::WavChunk::<S>(wav_chunk) => {
+                if !self.writers.contains_key(&wav_chunk.id) {
+                    self.writers.insert(
+                        wav_chunk.id,
+                        AudioWriter::new(self.wav_path(wav_chunk.id), self.spec.into())?,
+                    );
+                    info!(self.logger, "new audio writer"; "id" => std::format!("{}", wav_chunk.id))
                 }
 
-                println!("wav chunk {} seq {}", wav_chunk.id, seq);
+                debug!(
+                    self.logger,
+                    "wav chunk received";
+                    "id" => std::format!("{}", wav_chunk.id),
+                    "seq" => wav_chunk.seq,
+                );
+
+                let writer = self.writers.get_mut(&wav_chunk.id).unwrap();
+                writer.write(wav_chunk)?;
             }
-            Audio::WavEnd { id } => {
-                if let Some((_, writer)) = self.writers.remove(&id) {
-                    writer.finalize()?;
-                    // TODO: create ComposedEventHandler
+            Audio::WavEnd { id } => match self.writers.remove(&id) {
+                Some(writer) => {
+                    self.finalize_writer(id, writer)?;
                 }
-            }
+                None => {
+                    warn!(self.logger, "wav writer has already ended"; "id" => std::format!("{}", id));
+                }
+            },
             _ => {
-                // TODO: warning: unexpected kind
+                warn!(self.logger, "unexpected audio kind: {:?}", audio);
             }
         };
         Ok(())
+    }
+
+    fn finalize_writer(&self, id: Uuid, writer: AudioWriter) -> anyhow::Result<()> {
+        self.database_addr.do_send(writer.finalize_as_new_event()?);
+        info!(self.logger, "finalize audio writer"; "id" => std::format!("{}", id));
+        Ok(())
+    }
+
+    fn finalize_all(&mut self) {
+        let database_addr = self.database_addr.clone();
+        let logger = self.logger.clone();
+        self.writers.drain().into_iter().for_each(|(id, writer)| {
+            match writer.finalize_as_new_event() {
+                Ok(new_event) => {
+                    database_addr.do_send(new_event);
+                    info!(logger, "finalize audio writer"; "id" => std::format!("{}", id));
+                }
+                Err(error) => {
+                    error!(logger, "failed to close wav writer, err: {}", error);
+                }
+            }
+        });
     }
 }
 
@@ -78,24 +173,17 @@ impl Actor for AudioHandler {
     type Context = Context<Self>;
 
     fn started(&mut self, _: &mut Context<Self>) {
-        println!("audio handler started");
+        info!(self.logger, "audio handler started");
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
-        println!("audio handler is stopping");
-        self.writers
-            .drain()
-            .into_iter()
-            .for_each(|(_, (_, writer))| {
-                if let Err(_) = writer.finalize() {
-                    // TODO: warning
-                };
-            });
+        info!(self.logger, "audio handler is stopping");
+        self.finalize_all();
         Running::Stop
     }
 
     fn stopped(&mut self, _: &mut Context<Self>) {
-        println!("audio handler stopped");
+        info!(self.logger, "audio handler stopped");
     }
 }
 
@@ -107,12 +195,12 @@ impl Handler<AudioBytes> for AudioHandler {
     type Result = ();
 
     fn handle(&mut self, buf: AudioBytes, _: &mut Self::Context) -> Self::Result {
-        if let Err(_) = match self.spec.sample_format {
+        if let Err(error) = match self.spec.sample_format {
             audio::SampleFormat::U16 => self.write::<u16, i16>(buf.0),
             audio::SampleFormat::I16 => self.write::<i16, i16>(buf.0),
             audio::SampleFormat::F32 => self.write::<f32, f32>(buf.0),
         } {
-            // TODO: warning: print error
+            warn!(self.logger, "failed to write audio, err: {}", error);
         };
         ()
     }

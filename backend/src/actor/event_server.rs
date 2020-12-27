@@ -9,6 +9,7 @@ use actix::{
 use anyhow;
 use event::EventCodec;
 use futures::stream::StreamExt;
+use slog::Logger;
 use std::net::{Ipv4Addr, SocketAddr};
 use structopt::StructOpt;
 use tokio::net::{self as net, TcpListener};
@@ -26,7 +27,11 @@ pub struct Config {
 }
 
 impl Config {
-    pub fn build(&self, database_addr: Addr<Database>) -> anyhow::Result<Addr<EventServer>> {
+    pub fn build(
+        &self,
+        logger: Logger,
+        database_addr: Addr<Database>,
+    ) -> anyhow::Result<Addr<EventServer>> {
         let listener = Box::new(bind_tcp_listener(self.event_server_port)?);
 
         Ok(EventServer::create(move |ctx| {
@@ -38,6 +43,7 @@ impl Config {
             );
             EventServer {
                 port: self.event_server_port,
+                logger,
                 database_addr,
             }
         }))
@@ -46,6 +52,7 @@ impl Config {
 
 pub struct EventServer {
     port: u16,
+    logger: Logger,
     database_addr: Addr<Database>,
 }
 
@@ -53,16 +60,16 @@ impl Actor for EventServer {
     type Context = Context<Self>;
 
     fn started(&mut self, _: &mut Context<Self>) {
-        println!("event server listen on port {}", self.port);
+        info!(self.logger, "event server listen on port {}", self.port);
     }
 
     fn stopping(&mut self, _: &mut Self::Context) -> Running {
-        println!("event server is stopping");
+        info!(self.logger, "event server is stopping");
         Running::Stop
     }
 
     fn stopped(&mut self, _: &mut Context<Self>) {
-        println!("event server stopped");
+        info!(self.logger, "event server stopped");
     }
 }
 
@@ -79,6 +86,7 @@ impl Handler<TcpStream> for EventServer {
             EventHandler::add_stream(FramedRead::new(read, EventCodec), ctx);
             EventHandler::new(
                 FramedWrite::new(write, BytesCodec::new(), ctx),
+                self.logger.clone(),
                 self.database_addr.clone(),
             )
         });

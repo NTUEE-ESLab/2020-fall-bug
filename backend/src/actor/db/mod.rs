@@ -7,6 +7,7 @@ use diesel::{
 use num_cpus;
 use structopt::StructOpt;
 
+pub mod device;
 pub mod event;
 pub mod user;
 
@@ -29,7 +30,7 @@ pub struct Config {
     #[structopt(
         long = "db-name",
         env = "DB_NAME",
-        default_value = "bugdev",
+        default_value = "bug",
         help = "the database name of postgres"
     )]
     db_name: String,
