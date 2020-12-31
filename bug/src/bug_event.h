@@ -18,18 +18,18 @@ struct overload : Ts... {
 template <class... Ts>
 overload(Ts...) -> overload<Ts...>;
 
-struct Luminosity {
-  const static int kind = 1;
-  int32_t from;
-  int32_t to;
-  Luminosity() : from(0), to(0) {}
-};
-
 struct Position {
-  const static int kind = 2;
+  const static int kind = 1;
   int32_t from[3];
   int32_t to[3];
   Position() : from{0}, to{0} {}
+};
+
+struct Luminosity {
+  const static int kind = 2;
+  int32_t from;
+  int32_t to;
+  Luminosity() : from(0), to(0) {}
 };
 
 using BugEventKind = variant<Luminosity*, Position*>;
@@ -43,7 +43,7 @@ using BugEventKind = variant<Luminosity*, Position*>;
 
 class BugEventCodec {
  public:
-  BugEventCodec(uint32_t secret) : _secret(secret) {}
+  BugEventCodec(uint64_t secret) : _secret(secret) {}
 
   uint encode(uint8_t* buf, BugEventKind kind, TimeRange& tr,
               int32_t ntp_secs) {
@@ -53,20 +53,16 @@ class BugEventCodec {
     uint32_t ended_at_nsecs = (tr.ended_at % 1000) * 1000000;
 
     uint offset = 0;
+    encode_little_endian_4(buf, &offset, _secret);
+    encode_little_endian_4(buf, &offset, _secret >> 32);
     encode_little_endian_4(buf, &offset, started_at_secs);
     encode_little_endian_4(buf, &offset, started_at_secs >> 32);
     encode_little_endian_4(buf, &offset, started_at_nsecs);
     encode_little_endian_4(buf, &offset, ended_at_secs);
     encode_little_endian_4(buf, &offset, ended_at_secs >> 32);
     encode_little_endian_4(buf, &offset, ended_at_nsecs);
-    encode_little_endian_4(buf, &offset, _secret);
 
     auto visitors = overload{
-        [&](Luminosity*& luminosity) {
-          encode_little_endian_4(buf, &offset, Luminosity::kind);
-          encode_little_endian_4(buf, &offset, luminosity->from);
-          encode_little_endian_4(buf, &offset, luminosity->to);
-        },
         [&](Position*& position) {
           encode_little_endian_4(buf, &offset, Position::kind);
           encode_little_endian_4(buf, &offset, position->from[0]);
@@ -76,6 +72,11 @@ class BugEventCodec {
           encode_little_endian_4(buf, &offset, position->to[1]);
           encode_little_endian_4(buf, &offset, position->to[2]);
         },
+        [&](Luminosity*& luminosity) {
+          encode_little_endian_4(buf, &offset, Luminosity::kind);
+          encode_little_endian_4(buf, &offset, luminosity->from);
+          encode_little_endian_4(buf, &offset, luminosity->to);
+        },
     };
 
     visit(visitors, kind);
@@ -84,7 +85,7 @@ class BugEventCodec {
   }
 
  private:
-  uint32_t _secret;
+  uint64_t _secret;
 };
 
 #endif

@@ -19,7 +19,7 @@ class BugEventClient : public TCPClient {
                  SocketAddress server_address =
                      SocketAddress(MBED_CONF_APP_BUG_BACKEND_SERVER_IP,
                                    MBED_CONF_APP_BUG_BACKEND_SERVER_PORT),
-                 uint32_t secret = MBED_CONF_APP_BUG_CLIENT_SECRET)
+                 uint64_t secret = MBED_CONF_APP_BUG_CLIENT_SECRET)
       : TCPClient(wifi, server_address),
         _thread(new rtos::Thread),
         _codec(new BugEventCodec(secret)) {}
