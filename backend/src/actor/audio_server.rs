@@ -1,19 +1,25 @@
 use crate::{
     actor::{
         audio_handler::{AudioBytes, AudioHandler},
-        db::Database,
+        db::{self, device::Device, Database},
     },
     signal::{Signal, SignalStream},
 };
 use actix::{
+    fut::FutureWrap,
     io::{SinkWrite, WriteHandler},
-    Actor, ActorContext, Addr, AsyncContext, Context, Handler, Message, Running, StreamHandler,
+    Actor, ActorContext, ActorFuture, Addr, AsyncContext, Context, ContextFutureSpawner, Handler,
+    MailboxError, Message, Running, StreamHandler, WrapFuture,
 };
 use anyhow::anyhow;
 use audio::Audio;
 use bincode::deserialize;
 use bytes::{Bytes, BytesMut};
-use futures::stream::{SplitSink, StreamExt};
+use db::SelectMsg;
+use futures::{
+    stream::{SplitSink, StreamExt},
+    Future,
+};
 use slog::Logger;
 use std::{
     collections::HashMap,
@@ -26,7 +32,7 @@ use structopt::StructOpt;
 use tokio::net::UdpSocket;
 use tokio_util::{codec::BytesCodec, udp::UdpFramed};
 
-#[derive(Debug, Clone, StructOpt)]
+#[derive(StructOpt, Clone, Debug)]
 pub struct Config {
     #[structopt(
         long = "audio-server-port",
@@ -86,6 +92,45 @@ pub struct AudioServer {
     writers: HashMap<SocketAddr, Addr<AudioHandler>>,
 }
 
+impl AudioServer {
+    fn new_handler(
+        (client_addr, spec, device): (
+            SocketAddr,
+            audio::Spec,
+            Result<Result<Device, db::Error>, MailboxError>,
+        ),
+        actor: &mut AudioServer,
+        _: &mut Context<AudioServer>,
+    ) -> FutureWrap<impl Future<Output = ()>, AudioServer> {
+        match device {
+            Ok(device) => match device {
+                Ok(device) => {
+                    let writer = AudioHandler::new(
+                        actor.wav_directory.clone(),
+                        actor.logger.clone(),
+                        actor.database_addr.clone(),
+                        spec,
+                        device.id,
+                    )
+                    .start();
+                    actor.writers.insert(client_addr, writer);
+                }
+                Err(err) => {
+                    if err.is_not_found() {
+                        warn!(actor.logger, "device not found");
+                    } else {
+                        error!(actor.logger, "{}", err);
+                    }
+                }
+            },
+            Err(err) => {
+                error!(actor.logger, "{}", err);
+            }
+        };
+        async {}.into_actor(actor)
+    }
+}
+
 impl Actor for AudioServer {
     type Context = Context<Self>;
 
@@ -108,20 +153,20 @@ impl Actor for AudioServer {
 struct UdpStream(BytesMut, SocketAddr);
 
 impl StreamHandler<UdpStream> for AudioServer {
-    fn handle(&mut self, udp_packet: UdpStream, _: &mut Context<Self>) {
+    fn handle(&mut self, udp_packet: UdpStream, ctx: &mut Context<Self>) {
         let UdpStream(buf, client_addr) = udp_packet;
         match self.writers.get_mut(&client_addr) {
             Some(writer) => writer.do_send(AudioBytes(buf)),
             None => match deserialize(&buf[..]) {
-                Ok(Audio::<f32>::Spec(spec)) => {
-                    let writer = AudioHandler::new(
-                        self.wav_directory.clone(),
-                        self.logger.clone(),
-                        self.database_addr.clone(),
-                        spec,
-                    )
-                    .start();
-                    self.writers.insert(client_addr, writer);
+                Ok(Audio::<f32>::Spec { secret, spec }) => {
+                    self.database_addr
+                        .send(SelectMsg::<u64, Device>::new(secret))
+                        .into_actor(self)
+                        .then(move |device, actor, _| {
+                            async move { (client_addr, spec, device) }.into_actor(actor)
+                        })
+                        .then(AudioServer::new_handler)
+                        .wait(ctx);
                 }
                 Ok(_) => {
                     // Send handshake to request spec of client

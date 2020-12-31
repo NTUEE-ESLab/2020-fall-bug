@@ -1,13 +1,15 @@
-use actix::{Actor, Addr, SyncArbiter, SyncContext};
+use actix::{Actor, Addr, Message, SyncArbiter, SyncContext};
 use anyhow;
 use diesel::{
     pg::PgConnection,
     r2d2::{ConnectionManager, Pool},
 };
 use num_cpus;
+use std::result;
 use structopt::StructOpt;
 
 pub mod device;
+pub mod device_credential;
 pub mod event;
 pub mod user;
 
@@ -75,4 +77,90 @@ pub struct Database(pub Pool<ConnectionManager<PgConnection>>);
 
 impl Actor for Database {
     type Context = SyncContext<Self>;
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<R>")]
+pub struct InsertMsg<I, R>
+where
+    R: 'static,
+{
+    value: I,
+    _phantom: std::marker::PhantomData<R>,
+}
+
+impl<I, R> InsertMsg<I, R>
+where
+    R: 'static,
+{
+    pub fn new(value: I) -> Self {
+        Self {
+            value,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+#[derive(Message)]
+#[rtype(result = "Result<R>")]
+pub struct SelectMsg<P, R>
+where
+    R: 'static,
+{
+    param: P,
+    _phantom: std::marker::PhantomData<R>,
+}
+
+impl<P, R> SelectMsg<P, R>
+where
+    R: 'static,
+{
+    pub fn new(param: P) -> Self {
+        Self {
+            param,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
+pub type Result<T> = result::Result<T, Error>;
+
+#[derive(Debug)]
+pub enum Error {
+    Diesel(diesel::result::Error),
+    PoolError(diesel::r2d2::PoolError),
+}
+
+impl Error {
+    pub fn is_not_found(&self) -> bool {
+        use Error::*;
+
+        match self {
+            Diesel(diesel::NotFound) => true,
+            _ => false,
+        }
+    }
+}
+
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        use Error::*;
+
+        match self {
+            Diesel(e) => write!(f, "diesel: {}", e),
+            PoolError(e) => write!(f, "r2d2 pool: {}", e),
+        }
+    }
+}
+
+impl From<diesel::result::Error> for Error {
+    fn from(error: diesel::result::Error) -> Self {
+        Self::Diesel(error)
+    }
+}
+
+impl From<diesel::r2d2::PoolError> for Error {
+    fn from(error: diesel::r2d2::PoolError) -> Self {
+        Self::PoolError(error)
+    }
 }

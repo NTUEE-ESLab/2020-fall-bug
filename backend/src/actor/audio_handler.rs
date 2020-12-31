@@ -1,13 +1,15 @@
-use crate::actor::db::{
-    event::{EventKind, NewEvent},
-    Database,
+use crate::{
+    actor::db::{
+        event::{EventPayload, NewEvent},
+        Database, InsertMsg,
+    },
+    schema::EventKind,
 };
 use actix::{Actor, Addr, Context, Handler, Message, Running};
 use anyhow::anyhow;
 use audio::{Audio, Spec};
 use bincode::deserialize;
 use bytes::BytesMut;
-use event::EventPayload;
 use hound::{WavSpec, WavWriter};
 use serde::de::Deserialize;
 use slog::Logger;
@@ -17,19 +19,21 @@ use std::{
 use uuid::Uuid;
 
 struct AudioWriter {
-    filepath: PathBuf,
     inner: Option<WavWriter<BufWriter<File>>>,
+    id: Uuid,
     seq: u32,
     started_at: chrono::DateTime<chrono::Utc>,
+    device_id: Uuid,
 }
 
 impl AudioWriter {
-    fn new(filepath: PathBuf, spec: WavSpec) -> anyhow::Result<Self> {
+    fn new(id: Uuid, filepath: PathBuf, spec: WavSpec, device_id: Uuid) -> anyhow::Result<Self> {
         Ok(Self {
-            filepath: filepath.clone(),
             inner: Some(WavWriter::create(filepath, spec)?),
+            id,
             seq: 0,
             started_at: chrono::Utc::now(),
+            device_id,
         })
     }
 
@@ -63,10 +67,11 @@ impl AudioWriter {
                 Ok(NewEvent {
                     kind: EventKind::Sound,
                     payload: EventPayload::Sound {
-                        wav_file: self.filepath.into_os_string().into_string().unwrap(),
+                        wav_file: std::format!("{}.wav", self.id),
                     },
                     started_at: self.started_at,
                     ended_at: chrono::Utc::now(),
+                    device_id: self.device_id,
                 })
             }
             None => Err(anyhow::anyhow!("unexpected write after finalized")),
@@ -78,6 +83,7 @@ pub struct AudioHandler {
     writers: HashMap<Uuid, AudioWriter>,
     wav_directory: PathBuf,
     spec: Spec,
+    device_id: Uuid,
     logger: Logger,
     database_addr: Addr<Database>,
 }
@@ -88,11 +94,13 @@ impl AudioHandler {
         logger: Logger,
         database_addr: Addr<Database>,
         spec: Spec,
+        device_id: Uuid,
     ) -> Self {
         Self {
             writers: HashMap::new(),
             wav_directory,
             spec,
+            device_id,
             logger,
             database_addr,
         }
@@ -116,7 +124,12 @@ impl AudioHandler {
                 if !self.writers.contains_key(&wav_chunk.id) {
                     self.writers.insert(
                         wav_chunk.id,
-                        AudioWriter::new(self.wav_path(wav_chunk.id), self.spec.into())?,
+                        AudioWriter::new(
+                            wav_chunk.id,
+                            self.wav_path(wav_chunk.id),
+                            self.spec.into(),
+                            self.device_id,
+                        )?,
                     );
                     info!(self.logger, "new audio writer"; "id" => std::format!("{}", wav_chunk.id))
                 }
@@ -147,7 +160,8 @@ impl AudioHandler {
     }
 
     fn finalize_writer(&self, id: Uuid, writer: AudioWriter) -> anyhow::Result<()> {
-        self.database_addr.do_send(writer.finalize_as_new_event()?);
+        self.database_addr
+            .do_send(InsertMsg::new(writer.finalize_as_new_event()?));
         info!(self.logger, "finalize audio writer"; "id" => std::format!("{}", id));
         Ok(())
     }
@@ -158,7 +172,7 @@ impl AudioHandler {
         self.writers.drain().into_iter().for_each(|(id, writer)| {
             match writer.finalize_as_new_event() {
                 Ok(new_event) => {
-                    database_addr.do_send(new_event);
+                    database_addr.do_send(InsertMsg::new(new_event));
                     info!(logger, "finalize audio writer"; "id" => std::format!("{}", id));
                 }
                 Err(error) => {

@@ -4,11 +4,11 @@ extern crate slog;
 use actix_web::rt::{self as actix_rt};
 use backend::{
     actor::{audio_server, db, event_server},
-    logger, server,
+    http, logger,
 };
 use structopt::StructOpt;
 
-#[derive(Debug, Clone, StructOpt)]
+#[derive(StructOpt, Clone, Debug)]
 pub struct Config {
     #[structopt(flatten)]
     logger: logger::Config,
@@ -19,7 +19,7 @@ pub struct Config {
     #[structopt(flatten)]
     event_server: event_server::Config,
     #[structopt(flatten)]
-    server: server::Config,
+    http: http::Config,
 }
 
 #[actix_rt::main]
@@ -45,13 +45,14 @@ async fn main() -> anyhow::Result<()> {
     )?;
 
     // create Server
-    let server = config.server.build(
+    let http_server = config.http.build(
+        config.audio_server,
         logger.new(o!("service" => "http-server")),
         database_addr.clone(),
     )?;
 
     // wait for stop signal and graceful shutdown
-    server.await?;
+    http_server.await?;
     actix_rt::System::current().stop();
 
     Ok(())

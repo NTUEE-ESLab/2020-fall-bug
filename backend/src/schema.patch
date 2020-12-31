@@ -1,0 +1,38 @@
+diff --git a/backend/src/schema.rs b/backend/src/schema.rs
+index e6e2627..868ec71 100644
+--- a/backend/src/schema.rs
++++ b/backend/src/schema.rs
+@@ -1,3 +1,6 @@
++#![allow(unused_imports)]
++use serde::Serialize;
++
+ table! {
+     use diesel::sql_types::*;
+     use diesel::pg::types::sql_types::{Uuid, Jsonb, Timestamptz, Bytea};
+@@ -13,12 +16,13 @@ table! {
+ table! {
+     use diesel::sql_types::*;
+     use diesel::pg::types::sql_types::{Uuid, Jsonb, Timestamptz, Bytea};
++    use super::EventKindMapping;
+
+     events (id) {
+         id -> Uuid,
+         created_at -> Timestamptz,
+         updated_at -> Timestamptz,
+-        kind -> Event_kind,
++        kind -> EventKindMapping,
+         payload -> Jsonb,
+         started_at -> Timestamptz,
+         ended_at -> Timestamptz,
+@@ -32,3 +36,11 @@ allow_tables_to_appear_in_same_query!(
+     devices,
+     events,
+ );
++
++#[derive(DbEnum, Serialize, PartialEq, Debug)]
++#[serde(rename_all = "lowercase")]
++pub enum EventKind {
++    Sound,
++    Position,
++    Luminosity,
++}

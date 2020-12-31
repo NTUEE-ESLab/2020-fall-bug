@@ -16,7 +16,7 @@ where
     S: Copy + Default,
 {
     Handshake,
-    Spec(Spec),
+    Spec { secret: u64, spec: Spec },
     WavChunk(WavChunk<S>),
     WavEnd { id: Uuid },
 }

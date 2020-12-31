@@ -1,10 +1,14 @@
-use crate::actor::db::{self, Database};
+use crate::actor::db::{self, device::Device, Database, InsertMsg};
 use actix::{
+    fut::FutureWrap,
     io::{FramedWrite, WriteHandler},
-    Actor, Addr, Context, Running, StreamHandler,
+    Actor, ActorContext, ActorFuture, Addr, Context, ContextFutureSpawner, MailboxError, Running,
+    StreamHandler, WrapFuture,
 };
 use bytes::Bytes;
+use db::SelectMsg;
 use event::{self, Event};
+use futures::Future;
 use slog::Logger;
 use tokio::io::WriteHalf;
 use tokio::net::TcpStream;
@@ -14,6 +18,7 @@ pub struct EventHandler {
     write: FramedWrite<Bytes, WriteHalf<TcpStream>, BytesCodec>,
     logger: Logger,
     database_addr: Addr<Database>,
+    device: Option<Device>,
 }
 
 impl EventHandler {
@@ -28,7 +33,40 @@ impl EventHandler {
             write,
             logger,
             database_addr,
+            device: None,
         }
+    }
+
+    fn inner_handle(&mut self, event: Event) {
+        if let Some(device) = self.device.as_ref() {
+            let new_event: db::event::NewEvent = (event, device.id).into();
+            debug!(self.logger, "new event arrived: {:?}", new_event);
+
+            self.database_addr.do_send(InsertMsg::new(new_event));
+            self.write.write(Self::MAGIC_RESPONSE);
+        }
+    }
+
+    fn authenticate(
+        device: Result<Result<Device, db::Error>, MailboxError>,
+        actor: &mut EventHandler,
+        ctx: &mut Context<EventHandler>,
+    ) -> FutureWrap<impl Future<Output = ()>, EventHandler> {
+        match device {
+            Ok(device) => match device {
+                Ok(device) => {
+                    actor.device = Some(device);
+                }
+                Err(err) => {
+                    error!(actor.logger, "{}", err);
+                    ctx.stop();
+                }
+            },
+            Err(err) => {
+                error!(actor.logger, "{}", err);
+            }
+        };
+        async {}.into_actor(actor)
     }
 }
 
@@ -50,7 +88,7 @@ impl Actor for EventHandler {
 }
 
 impl StreamHandler<Result<Event, event::Error>> for EventHandler {
-    fn handle(&mut self, event: Result<Event, event::Error>, _: &mut Self::Context) {
+    fn handle(&mut self, event: Result<Event, event::Error>, ctx: &mut Self::Context) {
         let event = match event {
             Ok(event) => event,
             Err(e) => {
@@ -60,13 +98,19 @@ impl StreamHandler<Result<Event, event::Error>> for EventHandler {
             }
         };
 
-        // TODO: check whether is authorized
-
-        let new_event: db::event::NewEvent = event.into();
-        debug!(self.logger, "new event requested: {:?}", new_event);
-
-        self.database_addr.do_send(new_event);
-        self.write.write(Self::MAGIC_RESPONSE);
+        if self.device.is_none() {
+            self.database_addr
+                .send(SelectMsg::new(event.secret))
+                .into_actor(self)
+                .then(EventHandler::authenticate)
+                .then(|_, actor, _| {
+                    actor.inner_handle(event);
+                    async {}.into_actor(actor)
+                })
+                .wait(ctx);
+        } else {
+            self.inner_handle(event);
+        }
     }
 }
 

@@ -6,6 +6,7 @@ extern crate diesel_derive_enum;
 extern crate slog;
 
 pub mod actor;
+pub mod http;
 pub mod logger;
-pub mod server;
+pub mod schema;
 pub mod signal;

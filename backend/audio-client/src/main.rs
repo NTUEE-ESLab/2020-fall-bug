@@ -15,6 +15,7 @@ use futures::{stream::poll_fn, task::Poll};
 use futures_sink::Sink as SinkTrait;
 use futures_util::StreamExt;
 use std::{
+    fmt::Display,
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
     thread,
@@ -44,6 +45,11 @@ pub struct Config {
         default_value = "127.0.0.1:3003"
     )]
     pub server_address: String,
+    #[structopt(
+        long = "server-secret",
+        help = "the secret to have audio server authenticate"
+    )]
+    pub server_secret: u64,
 }
 
 #[actix_rt::main]
@@ -119,6 +125,7 @@ async fn main() -> Result<(), anyhow::Error> {
                     noise_gate: NoiseGate::new(open_threshold as f32, release_sample_count),
                     sink: AudioSink::new(
                         UdpSink::new(server_address, SinkWrite::new(sink, ctx)),
+                        config.server_secret,
                         spec,
                     ),
                 }
@@ -157,6 +164,7 @@ async fn main() -> Result<(), anyhow::Error> {
                     noise_gate: NoiseGate::new(open_threshold as i16, release_sample_count),
                     sink: AudioSink::new(
                         UdpSink::new(server_address, SinkWrite::new(sink, ctx)),
+                        config.server_secret,
                         spec,
                     ),
                 }
@@ -195,6 +203,7 @@ async fn main() -> Result<(), anyhow::Error> {
                     noise_gate: NoiseGate::new(open_threshold as u16, release_sample_count),
                     sink: AudioSink::new(
                         UdpSink::new(server_address, SinkWrite::new(sink, ctx)),
+                        config.server_secret,
                         spec,
                     ),
                 }
@@ -265,10 +274,12 @@ where
     D: AudioSinkWrite<S>,
 {
     inner: D,
+    secret: u64,
     spec: audio::Spec,
     buf: WavChunkPayload<S>,
     buf_pos: usize,
     buf_id_seq: (Uuid, u32),
+    first_payload_ignored: bool,
 }
 
 impl<S, D> AudioSink<S, D>
@@ -276,18 +287,27 @@ where
     S: Sample + Default,
     D: AudioSinkWrite<S>,
 {
-    fn new(inner: D, spec: audio::Spec) -> Self {
+    fn new(inner: D, secret: u64, spec: audio::Spec) -> Self {
         Self {
             inner,
+            secret,
             spec,
             buf: WavChunkPayload::default(),
             buf_pos: 0,
             buf_id_seq: (Uuid::new_v4(), 0),
+            first_payload_ignored: false,
         }
     }
 
     fn write_spec(&mut self) {
-        if self.inner.write(Audio::<S>::Spec(self.spec)).is_some() {
+        if self
+            .inner
+            .write(Audio::<S>::Spec {
+                secret: self.secret,
+                spec: self.spec,
+            })
+            .is_some()
+        {
             eprintln!("udp sink buffer is full");
         }
     }
@@ -325,7 +345,7 @@ where
 
 impl<S, D> Sink<S> for AudioSink<S, D>
 where
-    S: Sample + Default,
+    S: Sample + Default + Display,
     D: AudioSinkWrite<S>,
 {
     fn record(&mut self, sample: S) {
@@ -337,6 +357,10 @@ where
     }
 
     fn end_of_transmission(&mut self) {
+        if !self.first_payload_ignored {
+            self.first_payload_ignored = true;
+            return;
+        }
         if self.buf_pos != 0 {
             self.write_payload();
             self.write_eof();
@@ -373,11 +397,11 @@ where
 
 impl<S, D> StreamHandler<WavChunkPayload<S>> for AudioCollector<S, D>
 where
-    S: Sample + Default + Unpin + 'static,
+    S: Sample + Display + Default + Unpin + 'static,
     D: AudioSinkWrite<S> + Unpin + 'static,
 {
-    fn handle(&mut self, samples: WavChunkPayload<S>, _: &mut Context<Self>) {
-        self.noise_gate.process(&samples.0[..], &mut self.sink);
+    fn handle(&mut self, payload: WavChunkPayload<S>, _: &mut Context<Self>) {
+        self.noise_gate.process(&payload.0[..], &mut self.sink);
     }
 
     fn finished(&mut self, ctx: &mut Self::Context) {
@@ -413,7 +437,7 @@ where
 
         // The only reason to receive packet from server is to request audio spec
         match audio {
-            Audio::Handshake => self.sink.write_spec(),
+            Audio::Handshake { .. } => self.sink.write_spec(),
             _ => {
                 // TODO: warning
             }
@@ -434,7 +458,7 @@ where
 
 fn write_input_data<S>(samples: &[S], writer: Arc<ArrayQueue<S>>)
 where
-    S: Sample,
+    S: Sample + Display,
 {
     for &sample in samples {
         if writer.push(sample).is_err() {
