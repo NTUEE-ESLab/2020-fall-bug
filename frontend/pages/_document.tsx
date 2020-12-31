@@ -6,6 +6,7 @@ import Document, {
   NextScript,
   DocumentContext,
 } from 'next/document'
+// Extension
 
 export default class MyDocument extends Document {
   static getInitialProps(ctx: DocumentContext) {

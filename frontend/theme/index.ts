@@ -1,6 +1,7 @@
 import { extendTheme } from '@chakra-ui/react'
-import components from './components'
-import styles from './styles'
+import components from '~/theme/components'
+import styles from '~/theme/styles'
+import colors from '~/theme/colors'
 
 const override = {
   config: {
@@ -9,6 +10,7 @@ const override = {
   },
   components,
   styles,
+  colors,
 }
 
 export default extendTheme(override)

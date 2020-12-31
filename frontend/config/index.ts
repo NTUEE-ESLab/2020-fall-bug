@@ -1,10 +1,10 @@
 import getConfig from 'next/config'
 import mergeDeepRight from 'ramda/src/mergeDeepRight'
-import publicRuntime from './publicRuntime'
+import publicRuntime from '~/config/publicRuntime'
 
 type RuntimeConfig = typeof publicRuntime & {
-  dev: Boolean
-  prod: Boolean
+  dev: boolean
+  prod: boolean
 }
 
 const { publicRuntimeConfig } = getConfig()

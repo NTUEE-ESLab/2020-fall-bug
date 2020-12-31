@@ -11,7 +11,15 @@ import config from '~/config'
 
 const Header: FC = () => (
   <>
-    <Box as="header" position="fixed" top="0" w="100vw" boxShadow="sm">
+    <Box
+      as="header"
+      position="fixed"
+      top="0"
+      w="100vw"
+      boxShadow="sm"
+      zIndex="10"
+      bgColor="grayAlpha85.50"
+    >
       <Box
         h="20"
         px={[0, 6]}
