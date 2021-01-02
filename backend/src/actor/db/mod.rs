@@ -123,15 +123,46 @@ where
     }
 }
 
+#[derive(Message)]
+#[rtype(result = "Result<R>")]
+pub struct DeleteMsg<P, R>
+where
+    R: 'static,
+{
+    param: P,
+    _phantom: std::marker::PhantomData<R>,
+}
+
+impl<P, R> DeleteMsg<P, R>
+where
+    R: 'static,
+{
+    pub fn new(param: P) -> Self {
+        Self {
+            param,
+            _phantom: std::marker::PhantomData,
+        }
+    }
+}
+
 pub type Result<T> = result::Result<T, Error>;
 
 #[derive(Debug)]
 pub enum Error {
     Diesel(diesel::result::Error),
     PoolError(diesel::r2d2::PoolError),
+    Unexpected(String),
 }
 
 impl Error {
+    pub fn not_found() -> Self {
+        Error::Diesel(diesel::NotFound)
+    }
+
+    pub fn unexpected(msg: String) -> Self {
+        Error::Unexpected(msg)
+    }
+
     pub fn is_not_found(&self) -> bool {
         use Error::*;
 
@@ -149,6 +180,7 @@ impl std::fmt::Display for Error {
         match self {
             Diesel(e) => write!(f, "diesel: {}", e),
             PoolError(e) => write!(f, "r2d2 pool: {}", e),
+            Unexpected(msg) => write!(f, "unexpected: {}", msg),
         }
     }
 }

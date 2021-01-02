@@ -77,6 +77,7 @@ impl From<db::Error> for Error {
             db::Error::PoolError(error) => {
                 ErrorDetail::new_private(ErrorKind::DB, error.to_string())
             }
+            db::Error::Unexpected(msg) => ErrorDetail::new_private(ErrorKind::DB, msg),
         };
         Self {
             code: match detail.kind {

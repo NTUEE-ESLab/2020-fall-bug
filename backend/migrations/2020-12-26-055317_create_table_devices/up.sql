@@ -4,5 +4,6 @@ CREATE TABLE IF NOT EXISTS devices (
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   -- data
-  name TEXT NOT NULL
-)
+  name TEXT NOT NULL,
+  description TEXT NOT NULL
+);

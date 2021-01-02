@@ -5,6 +5,34 @@ table! {
     use diesel::sql_types::*;
     use diesel::pg::types::sql_types::{Uuid, Jsonb, Timestamptz, Bytea};
 
+    composed_events (id) {
+        id -> Uuid,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        name -> Text,
+        description -> Text,
+        rule -> Jsonb,
+    }
+}
+
+table! {
+    use diesel::sql_types::*;
+    use diesel::pg::types::sql_types::{Uuid, Jsonb, Timestamptz, Bytea};
+
+    composed_events_events (id) {
+        id -> Uuid,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        judgement_id -> Uuid,
+        composed_event_id -> Uuid,
+        event_id -> Uuid,
+    }
+}
+
+table! {
+    use diesel::sql_types::*;
+    use diesel::pg::types::sql_types::{Uuid, Jsonb, Timestamptz, Bytea};
+
     device_credentials (id) {
         id -> Uuid,
         created_at -> Timestamptz,
@@ -23,6 +51,7 @@ table! {
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
         name -> Text,
+        description -> Text,
     }
 }
 
@@ -43,13 +72,48 @@ table! {
     }
 }
 
+table! {
+    use diesel::sql_types::*;
+    use diesel::pg::types::sql_types::{Uuid, Jsonb, Timestamptz, Bytea};
+
+    events_labels (id) {
+        id -> Uuid,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        event_id -> Uuid,
+        label_id -> Uuid,
+    }
+}
+
+table! {
+    use diesel::sql_types::*;
+    use diesel::pg::types::sql_types::{Uuid, Jsonb, Timestamptz, Bytea};
+
+    labels (id) {
+        id -> Uuid,
+        created_at -> Timestamptz,
+        updated_at -> Timestamptz,
+        name -> Text,
+        description -> Text,
+        rule -> Jsonb,
+    }
+}
+
+joinable!(composed_events_events -> composed_events (composed_event_id));
+joinable!(composed_events_events -> events (event_id));
 joinable!(device_credentials -> devices (device_id));
 joinable!(events -> devices (device_id));
+joinable!(events_labels -> events (event_id));
+joinable!(events_labels -> labels (label_id));
 
 allow_tables_to_appear_in_same_query!(
+    composed_events,
+    composed_events_events,
     device_credentials,
     devices,
     events,
+    events_labels,
+    labels,
 );
 
 #[derive(DbEnum, Serialize, PartialEq, Debug)]

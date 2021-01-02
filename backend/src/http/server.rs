@@ -85,6 +85,9 @@ fn routes(app: &mut web::ServiceConfig, audio_wav_directory: String) {
                         .route(web::get().to(super::device::list))
                         .route(web::post().to(super::device::create)),
                 )
+                .service(
+                    web::resource("/devices/{id}").route(web::delete().to(super::device::delete)),
+                )
                 .service(web::resource("/events").route(web::get().to(super::event::list)))
                 .service(web::resource("/events/{id}").route(web::get().to(super::event::read))),
         );

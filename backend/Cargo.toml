@@ -30,6 +30,7 @@ slog = "2.7.0"
 rand = "0.8.0"
 actix-cors = "0.5.3"
 actix-files = "0.5.0"
+serde-hex = "0.1.0"
 
 [workspace]
 members = ["audio", "audio-client", "event"]

@@ -9,5 +9,5 @@ CREATE TABLE IF NOT EXISTS events (
   started_at TIMESTAMPTZ NOT NULL,
   ended_at TIMESTAMPTZ NOT NULL,
   -- fk
-  device_id UUID NOT NULL REFERENCES devices (id)
-)
+  device_id UUID NOT NULL REFERENCES devices (id) ON DELETE CASCADE ON UPDATE CASCADE
+);

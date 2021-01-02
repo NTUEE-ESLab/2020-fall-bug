@@ -6,21 +6,53 @@ use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-type AllColumns = (devices::id, devices::name);
+type AllColumns = (devices::id, devices::name, devices::description);
 
-pub const ALL_COLUMNS: AllColumns = (devices::id, devices::name);
+pub const ALL_COLUMNS: AllColumns = (devices::id, devices::name, devices::description);
 
 #[derive(Queryable, Identifiable, Serialize, Debug)]
 #[table_name = "devices"]
 pub struct Device {
     pub id: Uuid,
     pub name: String,
+    pub description: String,
 }
 
 #[derive(Insertable, Deserialize, Debug)]
 #[table_name = "devices"]
 pub struct NewDevice {
     pub name: String,
+    pub description: String,
+}
+
+impl Handler<super::InsertMsg<NewDevice, (Device, u64)>> for Database {
+    type Result = super::Result<(Device, u64)>;
+
+    fn handle(
+        &mut self,
+        msg: super::InsertMsg<NewDevice, (Device, u64)>,
+        _: &mut Self::Context,
+    ) -> Self::Result {
+        let connection = self.0.get()?;
+        connection.transaction(|| {
+            let device = diesel::insert_into(devices::table)
+                .values::<&NewDevice>(&msg.value)
+                .returning(ALL_COLUMNS)
+                .get_result::<Device>(&connection)?;
+
+            let mut rng = thread_rng();
+            let secret: u64 = rng.gen();
+
+            diesel::insert_into(device_credentials::table)
+                .values(super::device_credential::NewDeviceCredential {
+                    secret: secret.to_be_bytes().to_vec(),
+                    device_id: device.id,
+                })
+                .execute(&connection)?;
+
+            Ok((device, secret))
+        })
+    }
 }
 
 impl Handler<super::SelectMsg<(), Vec<Device>>> for Database {
@@ -55,32 +87,20 @@ impl Handler<super::SelectMsg<u64, Device>> for Database {
     }
 }
 
-impl Handler<super::InsertMsg<NewDevice, (Device, u64)>> for Database {
-    type Result = super::Result<(Device, u64)>;
+impl Handler<super::DeleteMsg<Uuid, ()>> for Database {
+    type Result = super::Result<()>;
 
-    fn handle(
-        &mut self,
-        msg: super::InsertMsg<NewDevice, (Device, u64)>,
-        _: &mut Self::Context,
-    ) -> Self::Result {
+    fn handle(&mut self, msg: super::DeleteMsg<Uuid, ()>, _: &mut Self::Context) -> Self::Result {
         let connection = self.0.get()?;
-        connection.transaction(|| {
-            let device = diesel::insert_into(devices::table)
-                .values::<&NewDevice>(&msg.value)
-                .returning(ALL_COLUMNS)
-                .get_result::<Device>(&connection)?;
-
-            let mut rng = thread_rng();
-            let secret: u64 = rng.gen();
-
-            diesel::insert_into(device_credentials::table)
-                .values(super::device_credential::NewDeviceCredential {
-                    secret: secret.to_be_bytes().to_vec(),
-                    device_id: device.id,
-                })
-                .execute(&connection)?;
-
-            Ok((device, secret))
-        })
+        match diesel::delete(devices::table.filter(devices::id.eq(msg.param)))
+            .execute(&connection)?
+        {
+            0 => Err(super::Error::not_found()),
+            1 => Ok(()),
+            num => Err(super::Error::unexpected(format!(
+                "expect 1 device to be deleted, but got {}",
+                num
+            ))),
+        }
     }
 }

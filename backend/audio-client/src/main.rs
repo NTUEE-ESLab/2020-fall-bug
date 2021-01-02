@@ -18,12 +18,17 @@ use std::{
     fmt::Display,
     net::{Ipv4Addr, SocketAddr},
     sync::Arc,
+    num::ParseIntError,
     thread,
 };
 use structopt::StructOpt;
 use tokio::net::UdpSocket;
 use tokio_util::udp::UdpFramed;
 use uuid::Uuid;
+
+fn parse_hex(src: &str) -> Result<u64, ParseIntError> {
+    u64::from_str_radix(src.trim_start_matches("0x"), 16)
+}
 
 #[derive(Debug, Clone, StructOpt)]
 pub struct Config {
@@ -47,7 +52,8 @@ pub struct Config {
     pub server_address: String,
     #[structopt(
         long = "server-secret",
-        help = "the secret to have audio server authenticate"
+        help = "the secret to have audio server authenticate",
+        parse(try_from_str = parse_hex)
     )]
     pub server_secret: u64,
 }
