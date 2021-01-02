@@ -6,7 +6,7 @@ import config from '~/config'
 // Type
 import { Event } from '~/store/type'
 
-const WavPlayer = dynamic(() => import('~/components/Visual/WavPlayer'), {
+const WavPlayer = dynamic(() => import('~/components/UI/WavPlayer'), {
   ssr: false,
 })
 

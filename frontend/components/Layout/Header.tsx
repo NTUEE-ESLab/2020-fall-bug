@@ -18,7 +18,7 @@ const Header: FC = () => (
       w="100vw"
       boxShadow="sm"
       zIndex="10"
-      bgColor="grayAlpha85.50"
+      bgColor="grayAlpha90.50"
     >
       <Box
         h="20"

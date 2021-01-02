@@ -13,7 +13,7 @@ import {
 import WaveSurfer, { WaveSurferParams } from 'wavesurfer.js'
 import dayjs from 'dayjs'
 // Component
-import PlayPauseButton from '~/components/Visual/PlayPauseButton'
+import PlayPauseButton from '~/components/UI/Button/PlayPauseButton'
 
 const DEFAULT_WAV_SURFER_HEIGHT = 128
 

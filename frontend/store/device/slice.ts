@@ -1,39 +1,68 @@
-import { createSlice } from '@reduxjs/toolkit'
-import { FetchableState } from '../type'
+import { createSlice, createEntityAdapter } from '@reduxjs/toolkit'
+import { Device } from '~/store/type'
+import {
+  wrapPendingReducer,
+  wrapSuccessReducer,
+  wrapFailureReducer,
+} from '~/store/action'
+import { CreateDeviceReq, DeleteDeviceReq } from '~/api/type'
 
-export type Device = {
-  id: string
-  name: string
-  description: string
-}
+const adapter = createEntityAdapter<Device>({
+  selectId: ({ id }) => id,
+})
 
-export const initialState: FetchableState<Event[]> = {
-  keys: [],
-  entities: {},
+const initialState = adapter.getInitialState({
   status: {
-    fetching: false,
-    error: false,
+    fetch: {
+      pending: false,
+      resolved: false,
+      rejected: false,
+    },
+    create: {
+      pending: false,
+      resolved: false,
+      rejected: false,
+    },
+    delete: {
+      pending: false,
+      resolved: false,
+      rejected: false,
+    },
   },
-}
+})
+
+type State = typeof initialState
 
 const slice = createSlice({
   name: 'device',
   initialState,
   reducers: {
-    fetch(state) {
-      state.status.fetching = true
-      state.status.error = false
-    },
-    fetchSuccess(state, action) {
-      state.keys = action.payload.keys
-      state.entities = action.payload.entities
-      state.status.fetching = false
-    },
-    fetchFailure(state, action) {
-      state.status.error = action.payload.error
-      state.status.fetching = false
-    },
+    fetch: wrapPendingReducer('fetch'),
+    fetchFailure: wrapFailureReducer('fetch'),
+    fetchSuccess: wrapSuccessReducer<State, Record<string, Device>>(
+      'fetch',
+      (state, action) => {
+        adapter.addMany(state, action.payload)
+      },
+    ),
+    create: wrapPendingReducer<State, CreateDeviceReq>('create'),
+    createFailure: wrapFailureReducer('create'),
+    createSuccess: wrapSuccessReducer<State, Device>(
+      'create',
+      (state, action) => {
+        adapter.addOne(state, action.payload)
+      },
+    ),
+    delete: wrapPendingReducer<State, DeleteDeviceReq>('delete'),
+    deleteFailure: wrapFailureReducer('delete'),
+    deleteSuccess: wrapSuccessReducer<State, DeleteDeviceReq>(
+      'delete',
+      (state, action) => {
+        adapter.removeOne(state, action.payload.id)
+      },
+    ),
   },
 })
 
 export const { name, actions, reducer } = slice
+export const selectors = adapter.getSelectors((state: any) => state[name])

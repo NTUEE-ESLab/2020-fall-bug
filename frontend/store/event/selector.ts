@@ -1,33 +1,28 @@
 import dayjs from 'dayjs'
 import { createSelector } from 'reselect'
-import { name } from '~/store/event/slice'
-import { Event } from '~/store/type'
+import { name, selectors } from '~/store/event/slice'
+import { makeSelectorStatus } from '~/store/selector'
 
-const selectStatus = (state: any): { fetching: boolean; error: any } =>
-  state[name]?.status
+export const selectFilterInDay = (state: any): number =>
+  state[name]?.filterInDay
 
-const selectKeys = (state: any): string[] => state[name]?.keys ?? []
-
-const selectEntities = (state: any): { [key: string]: Event } =>
-  state[name]?.entities ?? {}
-
-const selectInDay = (state: any): number => state[name]?.filterInDay
+export const makeSelectorFilterInDay = () =>
+  createSelector(selectFilterInDay, (filterInDay) => filterInDay)
 
 export const makeSelectorEvents = () =>
   createSelector(
-    selectStatus,
-    selectKeys,
-    selectEntities,
-    (status, keys, entities) => ({
+    makeSelectorStatus(name, 'fetch'),
+    selectors.selectAll,
+    (status, events) => ({
       ...status,
-      events: keys.map((key) => entities[key]),
+      events,
     }),
   )
 
 export const makeSelectorEventsInDay = () =>
   createSelector(
     makeSelectorEvents(),
-    selectInDay,
+    selectFilterInDay,
     ({ events, ...rest }, filterInDay) => ({
       ...rest,
       filterInDay,

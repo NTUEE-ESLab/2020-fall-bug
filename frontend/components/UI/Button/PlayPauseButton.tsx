@@ -30,7 +30,7 @@ const PlayPauseButton = ({
   return (
     <Button
       onClick={() => onClick(playing)}
-      variant="reset"
+      variant="unstyled"
       width="0"
       height="1em"
       borderColor="transparent transparent transparent #202020"

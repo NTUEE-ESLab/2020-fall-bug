@@ -1,6 +1,7 @@
 import { shallowEqual, useSelector } from 'react-redux'
 import { useInjectReducer, useInjectSaga } from 'redux-injectors'
 import {
+  makeSelectorFilterInDay,
   makeSelectorEvents,
   makeSelectorEventsInDay,
 } from '~/store/event/selector'
@@ -21,4 +22,9 @@ export const useEvents = wrapInjector(() =>
 const eventsInDaySelector = makeSelectorEventsInDay()
 export const useEventsInDay = wrapInjector(() =>
   useSelector(eventsInDaySelector, shallowEqual),
+)
+
+const filterInDaySelector = makeSelectorFilterInDay()
+export const useFilterInDay = wrapInjector(() =>
+  useSelector(filterInDaySelector, shallowEqual),
 )

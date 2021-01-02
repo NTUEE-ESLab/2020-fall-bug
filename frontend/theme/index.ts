@@ -11,6 +11,9 @@ const override = {
   components,
   styles,
   colors,
+  shadows: {
+    outline: 'none',
+  },
 }
 
 export default extendTheme(override)

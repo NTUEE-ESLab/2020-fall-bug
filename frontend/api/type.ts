@@ -1,7 +1,7 @@
 export type PageQuery = {}
 
 export type Document<Data> = {
-  data: Data | Data[]
+  data: Data
 }
 
 export enum EventKind {}
@@ -16,6 +16,15 @@ export type EventRes = {
   started_at: string
   ended_at: string
   device_id: string
+}
+
+export type CreateDeviceReq = {
+  name: string
+  description: string
+}
+
+export type DeleteDeviceReq = {
+  id: string
 }
 
 export type DeviceRes = {

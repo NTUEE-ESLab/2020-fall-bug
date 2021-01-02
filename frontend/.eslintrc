@@ -29,7 +29,15 @@
     "react/prop-types": "off",
     "react/require-default-props": "off",
     "no-param-reassign": ["error", { "props": false }],
-    "no-underscore-dangle": ["error", { "allow": ["__"] }]
+    "no-underscore-dangle": ["error", { "allow": ["__"] }],
+    "@typescript-eslint/naming-convention": [
+      "error",
+      {
+        "selector": "variable",
+        "modifiers": ["destructured"],
+        "format": null
+      }
+    ]
   },
   "settings": {
     "import/resolver": {

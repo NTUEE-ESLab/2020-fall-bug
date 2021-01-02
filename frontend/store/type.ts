@@ -1,11 +1,19 @@
-export type FetchableState<T, E = {}> = {
+export type Status = {
+  pending: boolean
+  resolved: boolean
+  rejected: any
+}
+
+export type State<T, E = {}> = E & {
   keys: string[]
-  entities: { [key: string]: T }
-  status: {
-    fetching: boolean
-    error: any
-  }
-} & E
+  entities: Record<string, T>
+}
+
+export type StatusState = {
+  status: Record<string, Status>
+}
+
+export type AsyncState<T, E = {}> = State<T, E> & StatusState
 
 type EventBase = {
   id: string
@@ -34,4 +42,6 @@ export type Event = EventSound | EventPosition | EventLuminoxity
 export type Device = {
   id: string
   name: string
+  description: string
+  secret?: string
 }

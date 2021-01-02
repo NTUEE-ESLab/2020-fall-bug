@@ -1,23 +1,14 @@
 import { createSelector } from 'reselect'
-import { name } from '~/store/device/slice'
-import { Device } from '~/store/type'
-
-const selectStatus = (state: any): { fetching: boolean; error: any } =>
-  state[name]?.status
-
-const selectKeys = (state: any): string[] => state[name]?.keys ?? []
-
-const selectEntities = (state: any): { [key: string]: Device } =>
-  state[name]?.entities ?? {}
+import { name, selectors } from '~/store/device/slice'
+import { makeSelectorStatus } from '~/store/selector'
 
 // eslint-disable-next-line import/prefer-default-export
 export const makeSelectorDevices = () =>
   createSelector(
-    selectStatus,
-    selectKeys,
-    selectEntities,
-    (status, keys, entities) => ({
+    makeSelectorStatus(name, 'fetch'),
+    selectors.selectAll,
+    (status, devices) => ({
       ...status,
-      devices: keys.map((key) => entities[key]),
+      devices,
     }),
   )

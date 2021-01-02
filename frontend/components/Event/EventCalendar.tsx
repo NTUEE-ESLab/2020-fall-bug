@@ -2,6 +2,7 @@ import dayjs from 'dayjs'
 import React, { useCallback, useMemo, memo } from 'react'
 import {
   Box,
+  Heading,
   HStack,
   VStack,
   Tooltip,
@@ -18,17 +19,19 @@ export const EventCalendarSkeleton = () => (
 )
 
 type EventCalendarProps = {
+  heading?: string
   fetching: boolean
   events: Event[]
   selectedYear: number
-  setSelectedUnixMilli: React.Dispatch<React.SetStateAction<number>>
+  onDaySelected: React.Dispatch<React.SetStateAction<number>>
 }
 
 const EventCalendar = ({
+  heading = 'Overview',
   fetching,
   events = [],
   selectedYear,
-  setSelectedUnixMilli,
+  onDaySelected,
 }: EventCalendarProps) => {
   // Local state
   const fillEventCount = useCallback(
@@ -53,61 +56,64 @@ const EventCalendar = ({
     return <EventCalendarSkeleton />
   }
   return (
-    <Box overflowX="scroll">
-      <HStack display="flex" alignItems="stretch" spacing="1">
-        {weeksFilledWithTime.map((weeks, week) => (
-          <VStack
-            // eslint-disable-next-line react/no-array-index-key
-            key={`${selectedYear}-${week}`}
-            flex="1"
-            alignItems="stretch"
-            spacing="1"
-          >
-            {weeks.map((unixMilli, day) => (
-              <AspectRatio
-                // eslint-disable-next-line react/no-array-index-key
-                key={`${unixMilli}-${day}`}
-                w="0.8em"
-                h="0.8em"
-                ratio={1}
-              >
-                {unixMilli ? (
-                  <Tooltip
-                    closeOnClick={false}
-                    closeOnMouseDown={false}
-                    bgColor="grayAlpha80.900"
-                    borderRadius="0.5em"
-                    label={
-                      <HStack spacing="1">
-                        <Box fontWeight="700">
-                          {weeksFilledWithEventCount[week][day]} events
-                        </Box>
-                        <Box opacity="0.6">
-                          on {dayjs(unixMilli).format('YYYY/MM/DD')}
-                        </Box>
-                      </HStack>
-                    }
-                    placement="top"
-                  >
-                    <Box
-                      bg={
-                        weeksFilledWithEventCount[week][day] > 0
-                          ? 'orange.300'
-                          : 'gray.200'
+    <>
+      <Heading size="lg">{heading}</Heading>
+      <Box overflowX="scroll">
+        <HStack display="flex" alignItems="stretch" spacing="1">
+          {weeksFilledWithTime.map((weeks, week) => (
+            <VStack
+              // eslint-disable-next-line react/no-array-index-key
+              key={`${selectedYear}-${week}`}
+              flex="1"
+              alignItems="stretch"
+              spacing="1"
+            >
+              {weeks.map((unixMilli, day) => (
+                <AspectRatio
+                  // eslint-disable-next-line react/no-array-index-key
+                  key={`${unixMilli}-${day}`}
+                  w="0.8em"
+                  h="0.8em"
+                  ratio={1}
+                >
+                  {unixMilli ? (
+                    <Tooltip
+                      closeOnClick={false}
+                      closeOnMouseDown={false}
+                      bgColor="grayAlpha80.900"
+                      borderRadius="0.5em"
+                      label={
+                        <HStack spacing="1">
+                          <Box fontWeight="700">
+                            {weeksFilledWithEventCount[week][day]} events
+                          </Box>
+                          <Box opacity="0.6">
+                            on {dayjs(unixMilli).format('YYYY/MM/DD')}
+                          </Box>
+                        </HStack>
                       }
-                      borderRadius="20%"
-                      onClick={() => setSelectedUnixMilli(unixMilli)}
-                    />
-                  </Tooltip>
-                ) : (
-                  <Box bg="grayAlpha50.100" borderRadius="20%" />
-                )}
-              </AspectRatio>
-            ))}
-          </VStack>
-        ))}
-      </HStack>
-    </Box>
+                      placement="top"
+                    >
+                      <Box
+                        bg={
+                          weeksFilledWithEventCount[week][day] > 0
+                            ? 'orange.300'
+                            : 'gray.200'
+                        }
+                        borderRadius="20%"
+                        onClick={() => onDaySelected(unixMilli)}
+                      />
+                    </Tooltip>
+                  ) : (
+                    <Box bg="grayAlpha50.100" borderRadius="20%" />
+                  )}
+                </AspectRatio>
+              ))}
+            </VStack>
+          ))}
+        </HStack>
+      </Box>
+    </>
   )
 }
 

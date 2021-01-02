@@ -1,18 +1,15 @@
 import { StyleConfig } from '@chakra-ui/theme-tools'
 
-const resetBaseStyle = {
-  outline: 'none',
-  borderRadius: 0,
-  _focus: {
-    boxShadow: 'none',
-  },
-}
-
 const button: { [key: string]: StyleConfig } = {
   Button: {
-    baseStyle: { ...resetBaseStyle },
     variants: {
-      reset: {
+      unstyled: {
+        outline: 'none',
+        borderRadius: 0,
+        boxShadow: 'none',
+        _focus: {
+          boxShadow: 'none',
+        },
         minWidth: 0,
         padding: 0,
         _hover: {},
