@@ -7,5 +7,7 @@ CREATE TABLE IF NOT EXISTS composed_events_events (
   judgement_id UUID NOT NULL,
   -- fk
   composed_event_id UUID NOT NULL REFERENCES composed_events (id) ON DELETE CASCADE ON UPDATE CASCADE,
-  event_id UUID NOT NULL REFERENCES events (id) ON DELETE CASCADE ON UPDATE CASCADE
+  event_id UUID NOT NULL REFERENCES events (id) ON DELETE CASCADE ON UPDATE CASCADE,
+  -- constrain
+  UNIQUE(composed_event_id, event_id)
 );

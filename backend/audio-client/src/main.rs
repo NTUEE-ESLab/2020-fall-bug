@@ -17,8 +17,8 @@ use futures_util::StreamExt;
 use std::{
     fmt::Display,
     net::{Ipv4Addr, SocketAddr},
-    sync::Arc,
     num::ParseIntError,
+    sync::Arc,
     thread,
 };
 use structopt::StructOpt;
@@ -406,7 +406,7 @@ where
     S: Sample + Display + Default + Unpin + 'static,
     D: AudioSinkWrite<S> + Unpin + 'static,
 {
-    fn handle(&mut self, payload: WavChunkPayload<S>, _: &mut Context<Self>) {
+    fn handle(&mut self, payload: WavChunkPayload<S>, _: &mut Self::Context) {
         self.noise_gate.process(&payload.0[..], &mut self.sink);
     }
 
@@ -425,7 +425,7 @@ where
     fn handle(
         &mut self,
         audio: Result<(audio::Audio<S>, SocketAddr), audio::Error>,
-        _: &mut Context<Self>,
+        _: &mut Self::Context,
     ) {
         let audio = match audio {
             Ok((audio, req_address)) => {

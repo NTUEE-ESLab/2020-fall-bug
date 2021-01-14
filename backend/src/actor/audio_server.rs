@@ -2,6 +2,7 @@ use crate::{
     actor::{
         audio_handler::{AudioBytes, AudioHandler},
         db::{self, device::Device, Database},
+        event_processor::EventProcessor,
     },
     signal::{Signal, SignalStream},
 };
@@ -55,6 +56,7 @@ impl Config {
         &self,
         logger: Logger,
         database_addr: Addr<Database>,
+        event_processor_addr: Addr<EventProcessor>,
     ) -> anyhow::Result<Addr<AudioServer>> {
         let wav_directory = ensure_directory(&self.audio_wav_directory)?;
 
@@ -73,6 +75,7 @@ impl Config {
                 wav_directory,
                 logger,
                 database_addr,
+                event_processor_addr,
                 sink: SinkWrite::new(sink, ctx),
                 writers: HashMap::new(),
             }
@@ -88,6 +91,7 @@ pub struct AudioServer {
     wav_directory: PathBuf,
     logger: Logger,
     database_addr: Addr<Database>,
+    event_processor_addr: Addr<EventProcessor>,
     sink: SinkWrite<UdpSinkItem, UdpSink>,
     writers: HashMap<SocketAddr, Addr<AudioHandler>>,
 }
@@ -108,7 +112,7 @@ impl AudioServer {
                     let writer = AudioHandler::new(
                         actor.wav_directory.clone(),
                         actor.logger.clone(),
-                        actor.database_addr.clone(),
+                        actor.event_processor_addr.clone(),
                         spec,
                         device.id,
                     )
@@ -134,7 +138,7 @@ impl AudioServer {
 impl Actor for AudioServer {
     type Context = Context<Self>;
 
-    fn started(&mut self, _: &mut Context<Self>) {
+    fn started(&mut self, _: &mut Self::Context) {
         info!(self.logger, "audio server listen on port {}", self.port);
     }
 
@@ -143,7 +147,7 @@ impl Actor for AudioServer {
         Running::Stop
     }
 
-    fn stopped(&mut self, _: &mut Context<Self>) {
+    fn stopped(&mut self, _: &mut Self::Context) {
         info!(self.logger, "audio server stopped");
     }
 }
@@ -153,7 +157,7 @@ impl Actor for AudioServer {
 struct UdpStream(BytesMut, SocketAddr);
 
 impl StreamHandler<UdpStream> for AudioServer {
-    fn handle(&mut self, udp_packet: UdpStream, ctx: &mut Context<Self>) {
+    fn handle(&mut self, udp_packet: UdpStream, ctx: &mut Self::Context) {
         let UdpStream(buf, client_addr) = udp_packet;
         match self.writers.get_mut(&client_addr) {
             Some(writer) => writer.do_send(AudioBytes(buf)),
@@ -198,7 +202,7 @@ impl WriteHandler<io::Error> for AudioServer {
 impl Handler<Signal> for AudioServer {
     type Result = ();
 
-    fn handle(&mut self, _: Signal, ctx: &mut Context<Self>) -> Self::Result {
+    fn handle(&mut self, _: Signal, ctx: &mut Self::Context) -> Self::Result {
         ctx.stop();
         ()
     }

@@ -1,5 +1,5 @@
-use crate::actor::{audio_server, db::Database};
-use actix::Addr;
+use crate::actor::{audio_server, db::Database, ws_manager::WsManager};
+use actix::{Actor, Addr};
 use actix_cors::Cors;
 use actix_files as fs;
 use actix_web::{
@@ -29,9 +29,14 @@ impl Config {
         audio_server_config: audio_server::Config,
         root: Logger,
         database_addr: Addr<Database>,
-    ) -> anyhow::Result<Server> {
+    ) -> anyhow::Result<(Server, WsManager)> {
         let logger = root.clone();
         let addr = SocketAddr::new(Ipv4Addr::UNSPECIFIED.into(), self.server_port);
+
+        // create actor WsManager
+        let ws_manager = WsManager::new(logger.clone());
+        let ws_manager_ret = ws_manager.clone();
+        ws_manager.clone().start();
 
         let server = HttpServer::new(move || {
             let logger = root.clone();
@@ -44,7 +49,11 @@ impl Config {
                 .max_age(3600);
 
             App::new()
-                .data(AppState{ database_addr: database_addr.clone(), logger: logger.clone() })
+                .data(AppState{
+                    logger: logger.clone(),
+                    database_addr: database_addr.clone(),
+                    ws_manager: ws_manager.clone()
+                })
                 .wrap_fn(move |req, srv| {
                     let logger = logger.clone();
                     let path = req.path().to_owned();
@@ -67,17 +76,22 @@ impl Config {
         .run();
 
         info!(logger, "http server listen on port {}", self.server_port);
-        Ok(server)
+        Ok((server, ws_manager_ret))
     }
 }
 
 pub struct AppState {
-    pub database_addr: Addr<Database>,
     pub logger: Logger,
+    pub database_addr: Addr<Database>,
+    pub ws_manager: WsManager,
 }
 
 fn routes(app: &mut web::ServiceConfig, audio_wav_directory: String) {
     app.service(fs::Files::new("/static/wav", audio_wav_directory).show_files_listing())
+        .service(
+            web::scope("/ws")
+                .service(web::resource("/event").route(web::get().to(super::ws::event))),
+        )
         .service(
             web::scope("/v1")
                 .service(
@@ -89,6 +103,14 @@ fn routes(app: &mut web::ServiceConfig, audio_wav_directory: String) {
                     web::resource("/devices/{id}").route(web::delete().to(super::device::delete)),
                 )
                 .service(web::resource("/events").route(web::get().to(super::event::list)))
-                .service(web::resource("/events/{id}").route(web::get().to(super::event::read))),
+                .service(web::resource("/events/{id}").route(web::get().to(super::event::read)))
+                .service(
+                    web::resource("/labels")
+                        .route(web::get().to(super::label::list))
+                        .route(web::post().to(super::label::create)),
+                )
+                .service(
+                    web::resource("/labels/{id}").route(web::delete().to(super::label::delete)),
+                ),
         );
 }

@@ -1,4 +1,7 @@
-use crate::actor::db::{self, device::Device, Database, InsertMsg};
+use crate::actor::{
+    db::{self, device::Device, Database},
+    event_processor::EventProcessor,
+};
 use actix::{
     fut::FutureWrap,
     io::{FramedWrite, WriteHandler},
@@ -18,6 +21,7 @@ pub struct EventHandler {
     write: FramedWrite<Bytes, WriteHalf<TcpStream>, BytesCodec>,
     logger: Logger,
     database_addr: Addr<Database>,
+    event_processor_addr: Addr<EventProcessor>,
     device: Option<Device>,
 }
 
@@ -28,11 +32,13 @@ impl EventHandler {
         write: FramedWrite<Bytes, WriteHalf<TcpStream>, BytesCodec>,
         logger: Logger,
         database_addr: Addr<Database>,
+        event_processor_addr: Addr<EventProcessor>,
     ) -> Self {
         Self {
             write,
             logger,
             database_addr,
+            event_processor_addr,
             device: None,
         }
     }
@@ -42,7 +48,7 @@ impl EventHandler {
             let new_event: db::event::NewEvent = (event, device.id).into();
             debug!(self.logger, "new event arrived: {:?}", new_event);
 
-            self.database_addr.do_send(InsertMsg::new(new_event));
+            self.event_processor_addr.do_send(new_event);
             self.write.write(Self::MAGIC_RESPONSE);
         }
     }
@@ -73,7 +79,7 @@ impl EventHandler {
 impl Actor for EventHandler {
     type Context = Context<Self>;
 
-    fn started(&mut self, _: &mut Context<Self>) {
+    fn started(&mut self, _: &mut Self::Context) {
         info!(self.logger, "event handler started");
     }
 
@@ -82,7 +88,7 @@ impl Actor for EventHandler {
         Running::Stop
     }
 
-    fn stopped(&mut self, _: &mut Context<Self>) {
+    fn stopped(&mut self, _: &mut Self::Context) {
         info!(self.logger, "event handler stopped");
     }
 }

@@ -1,7 +1,7 @@
 use crate::{
-    actor::db::{
-        event::{EventPayload, NewEvent},
-        Database, InsertMsg,
+    actor::{
+        db::event::{EventPayload, NewEvent},
+        event_processor::EventProcessor,
     },
     schema::EventKind,
 };
@@ -85,14 +85,14 @@ pub struct AudioHandler {
     spec: Spec,
     device_id: Uuid,
     logger: Logger,
-    database_addr: Addr<Database>,
+    event_processor_addr: Addr<EventProcessor>,
 }
 
 impl AudioHandler {
     pub fn new(
         wav_directory: PathBuf,
         logger: Logger,
-        database_addr: Addr<Database>,
+        event_processor_addr: Addr<EventProcessor>,
         spec: Spec,
         device_id: Uuid,
     ) -> Self {
@@ -102,7 +102,7 @@ impl AudioHandler {
             spec,
             device_id,
             logger,
-            database_addr,
+            event_processor_addr,
         }
     }
 
@@ -160,19 +160,19 @@ impl AudioHandler {
     }
 
     fn finalize_writer(&self, id: Uuid, writer: AudioWriter) -> anyhow::Result<()> {
-        self.database_addr
-            .do_send(InsertMsg::new(writer.finalize_as_new_event()?));
+        self.event_processor_addr
+            .do_send(writer.finalize_as_new_event()?);
         info!(self.logger, "finalize audio writer"; "id" => std::format!("{}", id));
         Ok(())
     }
 
     fn finalize_all(&mut self) {
-        let database_addr = self.database_addr.clone();
+        let event_processor_addr = self.event_processor_addr.clone();
         let logger = self.logger.clone();
         self.writers.drain().into_iter().for_each(|(id, writer)| {
             match writer.finalize_as_new_event() {
                 Ok(new_event) => {
-                    database_addr.do_send(InsertMsg::new(new_event));
+                    event_processor_addr.do_send(new_event);
                     info!(logger, "finalize audio writer"; "id" => std::format!("{}", id));
                 }
                 Err(error) => {
@@ -186,7 +186,7 @@ impl AudioHandler {
 impl Actor for AudioHandler {
     type Context = Context<Self>;
 
-    fn started(&mut self, _: &mut Context<Self>) {
+    fn started(&mut self, _: &mut Self::Context) {
         info!(self.logger, "audio handler started");
     }
 
@@ -196,7 +196,7 @@ impl Actor for AudioHandler {
         Running::Stop
     }
 
-    fn stopped(&mut self, _: &mut Context<Self>) {
+    fn stopped(&mut self, _: &mut Self::Context) {
         info!(self.logger, "audio handler stopped");
     }
 }

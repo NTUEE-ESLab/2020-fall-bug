@@ -1,5 +1,5 @@
 #![allow(unused_imports)]
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 table! {
     use diesel::sql_types::*;
@@ -88,14 +88,17 @@ table! {
 table! {
     use diesel::sql_types::*;
     use diesel::pg::types::sql_types::{Uuid, Jsonb, Timestamptz, Bytea};
+    use super::EventKindMapping;
 
     labels (id) {
         id -> Uuid,
         created_at -> Timestamptz,
         updated_at -> Timestamptz,
+        event_kind -> EventKindMapping,
         name -> Text,
         description -> Text,
         rule -> Jsonb,
+        device_id -> Uuid,
     }
 }
 
@@ -105,6 +108,7 @@ joinable!(device_credentials -> devices (device_id));
 joinable!(events -> devices (device_id));
 joinable!(events_labels -> events (event_id));
 joinable!(events_labels -> labels (label_id));
+joinable!(labels -> devices (device_id));
 
 allow_tables_to_appear_in_same_query!(
     composed_events,
@@ -116,8 +120,8 @@ allow_tables_to_appear_in_same_query!(
     labels,
 );
 
-#[derive(DbEnum, Serialize, PartialEq, Debug)]
-#[serde(rename_all = "lowercase")]
+#[derive(DbEnum, Deserialize, Serialize, Clone, PartialEq, Debug)]
+#[serde(rename_all = "snake_case")]
 pub enum EventKind {
     Sound,
     Position,

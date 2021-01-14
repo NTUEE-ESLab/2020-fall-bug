@@ -5,13 +5,15 @@ use diesel::{
     r2d2::{ConnectionManager, Pool},
 };
 use num_cpus;
-use std::result;
+use std::{marker::PhantomData, result};
 use structopt::StructOpt;
 
+pub mod composed_event;
 pub mod device;
 pub mod device_credential;
 pub mod event;
-pub mod user;
+pub mod event_label;
+pub mod label;
 
 #[derive(Debug, Clone, StructOpt)]
 pub struct Config {
@@ -86,7 +88,7 @@ where
     R: 'static,
 {
     value: I,
-    _phantom: std::marker::PhantomData<R>,
+    _phantom: PhantomData<R>,
 }
 
 impl<I, R> InsertMsg<I, R>
@@ -96,7 +98,7 @@ where
     pub fn new(value: I) -> Self {
         Self {
             value,
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -108,7 +110,7 @@ where
     R: 'static,
 {
     param: P,
-    _phantom: std::marker::PhantomData<R>,
+    _phantom: PhantomData<R>,
 }
 
 impl<P, R> SelectMsg<P, R>
@@ -118,19 +120,19 @@ where
     pub fn new(param: P) -> Self {
         Self {
             param,
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
 
 #[derive(Message)]
-#[rtype(result = "Result<R>")]
+#[rtype(result = "Result<PhantomData<R>>")]
 pub struct DeleteMsg<P, R>
 where
     R: 'static,
 {
     param: P,
-    _phantom: std::marker::PhantomData<R>,
+    _phantom: PhantomData<R>,
 }
 
 impl<P, R> DeleteMsg<P, R>
@@ -140,7 +142,7 @@ where
     pub fn new(param: P) -> Self {
         Self {
             param,
-            _phantom: std::marker::PhantomData,
+            _phantom: PhantomData,
         }
     }
 }
@@ -194,5 +196,14 @@ impl From<diesel::result::Error> for Error {
 impl From<diesel::r2d2::PoolError> for Error {
     fn from(error: diesel::r2d2::PoolError) -> Self {
         Self::PoolError(error)
+    }
+}
+
+impl From<actix::MailboxError> for Error {
+    fn from(error: actix::MailboxError) -> Self {
+        Self::Unexpected(match error {
+            actix::MailboxError::Closed => String::from("mailbox error: closed"),
+            actix::MailboxError::Timeout => String::from("mailbox error: timeout"),
+        })
     }
 }

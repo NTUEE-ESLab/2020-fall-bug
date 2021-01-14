@@ -8,10 +8,9 @@ use serde_hex::{CompactPfx, SerHex};
 use uuid::Uuid;
 
 #[derive(Serialize)]
-pub struct DeviceWithSecret {
-    pub id: Uuid,
-    pub name: String,
-    pub description: String,
+pub struct NewDeviceRes {
+    #[serde(flatten)]
+    device: Device,
     #[serde(with = "SerHex::<CompactPfx>")]
     pub secret: u64,
 }
@@ -21,14 +20,11 @@ pub async fn create(
     body: web::Json<NewDevice>,
 ) -> Result<HttpResponse, super::Error> {
     let (device, secret) = data.database_addr.send(InsertMsg::new(body.0)).await??;
-    Ok(
-        HttpResponse::Ok().json2(&super::Document::new(DeviceWithSecret {
-            id: device.id,
-            name: device.name,
-            description: device.description,
-            secret,
-        })),
-    )
+    let response = NewDeviceRes {
+        device: device,
+        secret,
+    };
+    Ok(HttpResponse::Ok().json2(&super::Document::new(response)))
 }
 
 pub async fn list(data: web::Data<super::AppState>) -> Result<HttpResponse, super::Error> {
@@ -38,8 +34,10 @@ pub async fn list(data: web::Data<super::AppState>) -> Result<HttpResponse, supe
 
 pub async fn delete(
     data: web::Data<super::AppState>,
-    path: web::Path<uuid::Uuid>,
+    path: web::Path<Uuid>,
 ) -> Result<HttpResponse, super::Error> {
-    data.database_addr.send(DeleteMsg::new(path.0)).await??;
+    data.database_addr
+        .send(DeleteMsg::<Uuid, Device>::new(path.0))
+        .await??;
     Ok(HttpResponse::Ok().finish())
 }

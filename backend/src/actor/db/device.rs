@@ -4,6 +4,7 @@ use actix::Handler;
 use diesel::prelude::*;
 use rand::{thread_rng, Rng};
 use serde::{Deserialize, Serialize};
+use std::marker::PhantomData;
 use uuid::Uuid;
 
 type AllColumns = (devices::id, devices::name, devices::description);
@@ -87,16 +88,20 @@ impl Handler<super::SelectMsg<u64, Device>> for Database {
     }
 }
 
-impl Handler<super::DeleteMsg<Uuid, ()>> for Database {
-    type Result = super::Result<()>;
+impl Handler<super::DeleteMsg<Uuid, Device>> for Database {
+    type Result = super::Result<PhantomData<Device>>;
 
-    fn handle(&mut self, msg: super::DeleteMsg<Uuid, ()>, _: &mut Self::Context) -> Self::Result {
+    fn handle(
+        &mut self,
+        msg: super::DeleteMsg<Uuid, Device>,
+        _: &mut Self::Context,
+    ) -> Self::Result {
         let connection = self.0.get()?;
         match diesel::delete(devices::table.filter(devices::id.eq(msg.param)))
             .execute(&connection)?
         {
             0 => Err(super::Error::not_found()),
-            1 => Ok(()),
+            1 => Ok(PhantomData),
             num => Err(super::Error::unexpected(format!(
                 "expect 1 device to be deleted, but got {}",
                 num

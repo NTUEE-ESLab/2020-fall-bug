@@ -1,5 +1,8 @@
-use crate::{actor::db::Database, schema::*};
-use actix::Handler;
+use crate::{
+    actor::db::{label::Label, Database},
+    schema::*,
+};
+use actix::{Handler, Message};
 use chrono::{DateTime, NaiveDateTime, Timelike, Utc};
 use diesel::{
     pg::{types::sql_types::Jsonb, Pg},
@@ -11,9 +14,9 @@ use serde::{Deserialize, Serialize};
 use std::io::Write;
 use uuid::Uuid;
 
-#[derive(FromSqlRow, AsExpression, Serialize, Deserialize, Debug, PartialEq)]
+#[derive(FromSqlRow, AsExpression, Serialize, Deserialize, Clone, Debug, PartialEq)]
 #[sql_type = "Jsonb"]
-#[serde(rename_all = "lowercase", tag = "kind")]
+#[serde(rename_all = "snake_case", tag = "kind")]
 pub enum EventPayload {
     Sound {
         wav_file: String,
@@ -42,7 +45,7 @@ impl ToSql<Jsonb, Pg> for EventPayload {
     }
 }
 
-#[derive(Queryable, Identifiable, Serialize, PartialEq, Debug)]
+#[derive(Queryable, Identifiable, Serialize, Clone, PartialEq, Debug)]
 #[table_name = "events"]
 pub struct Event {
     pub id: Uuid,
@@ -71,8 +74,9 @@ pub const ALL_COLUMNS: AllColumns = (
     events::device_id,
 );
 
-#[derive(Insertable, Debug)]
+#[derive(Insertable, Debug, Message)]
 #[table_name = "events"]
+#[rtype(result = "super::Result<Event>")]
 pub struct NewEvent {
     pub kind: EventKind,
     pub payload: EventPayload,
@@ -142,33 +146,54 @@ impl Handler<super::InsertMsg<NewEvent, Event>> for Database {
     }
 }
 
-impl Handler<super::SelectMsg<(), Vec<Event>>> for Database {
-    type Result = super::Result<Vec<Event>>;
+impl Handler<super::SelectMsg<(), Vec<(Event, Vec<Label>)>>> for Database {
+    type Result = super::Result<Vec<(Event, Vec<Label>)>>;
 
     fn handle(
         &mut self,
-        _: super::SelectMsg<(), Vec<Event>>,
+        _: super::SelectMsg<(), Vec<(Event, Vec<Label>)>>,
         _: &mut Self::Context,
     ) -> Self::Result {
         let connection = self.0.get()?;
-        Ok(events::table
+        let events = events::table
             .select(ALL_COLUMNS)
-            .get_results::<Event>(&connection)?)
+            .load::<Event>(&connection)?;
+        let labels = super::event_label::EventLabel::belonging_to(&events[..])
+            .inner_join(labels::table)
+            .select((super::event_label::ALL_COLUMNS, super::label::ALL_COLUMNS))
+            .load::<(super::event_label::EventLabel, Label)>(&connection)?
+            .grouped_by(&events[..]);
+
+        Ok(labels
+            .into_iter()
+            .zip(events)
+            .map(|(labels, events)| {
+                (
+                    events,
+                    labels.into_iter().map(|(_, labels)| labels).collect(),
+                )
+            })
+            .collect())
     }
 }
 
-impl Handler<super::SelectMsg<Uuid, Event>> for Database {
-    type Result = super::Result<Event>;
+impl Handler<super::SelectMsg<Uuid, (Event, Vec<Label>)>> for Database {
+    type Result = super::Result<(Event, Vec<Label>)>;
 
     fn handle(
         &mut self,
-        msg: super::SelectMsg<Uuid, Event>,
+        msg: super::SelectMsg<Uuid, (Event, Vec<Label>)>,
         _: &mut Self::Context,
     ) -> Self::Result {
         let connection = self.0.get()?;
-        Ok(events::table
+        let event = events::table
             .select(ALL_COLUMNS)
             .filter(events::id.eq(msg.param))
-            .get_result::<Event>(&connection)?)
+            .get_result::<Event>(&connection)?;
+        let label = super::event_label::EventLabel::belonging_to(&event)
+            .inner_join(labels::table)
+            .select((super::event_label::ALL_COLUMNS, super::label::ALL_COLUMNS))
+            .load::<(super::event_label::EventLabel, Label)>(&connection)?;
+        Ok((event, label.into_iter().map(|(_, labels)| labels).collect()))
     }
 }
