@@ -21,7 +21,7 @@ const EventItem = ({ event, isExpanded = false }: EventItemProps) => {
       return (
         <Box>
           <WavPlayer
-            url={`${config.backend.endpoint}/static/wav/${event.payload.wavFile}`}
+            url={`${config.backend.uri}/static/wav/${event.payload.wavFile}`}
             shouldReRender={isExpanded}
           />
         </Box>

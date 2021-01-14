@@ -1,13 +1,29 @@
-import { createSlice, createEntityAdapter } from '@reduxjs/toolkit'
-import { Device } from '~/store/type'
+import * as R from 'ramda'
+import {
+  createSlice,
+  createEntityAdapter,
+  PayloadAction,
+  Dictionary,
+} from '@reduxjs/toolkit'
+import { schema as Schema } from 'normalizr'
+import { NormalizedDevice, NormalizedLabel } from '~/store/type'
 import {
   wrapPendingReducer,
   wrapSuccessReducer,
   wrapFailureReducer,
 } from '~/store/action'
 import { CreateDeviceReq, DeleteDeviceReq } from '~/api/type'
+import { rekeyCamelCase } from '~/util/rekey'
 
-const adapter = createEntityAdapter<Device>({
+export const schema = new Schema.Entity('devices', undefined, {
+  processStrategy: (value) => {
+    const rekeyed = rekeyCamelCase(value)
+    rekeyed.labels = []
+    return rekeyed
+  },
+})
+
+const adapter = createEntityAdapter<NormalizedDevice>({
   selectId: ({ id }) => id,
 })
 
@@ -39,7 +55,7 @@ const slice = createSlice({
   reducers: {
     fetch: wrapPendingReducer('fetch'),
     fetchFailure: wrapFailureReducer('fetch'),
-    fetchSuccess: wrapSuccessReducer<State, Record<string, Device>>(
+    fetchSuccess: wrapSuccessReducer<State, Record<string, NormalizedDevice>>(
       'fetch',
       (state, action) => {
         adapter.addMany(state, action.payload)
@@ -47,7 +63,7 @@ const slice = createSlice({
     ),
     create: wrapPendingReducer<State, CreateDeviceReq>('create'),
     createFailure: wrapFailureReducer('create'),
-    createSuccess: wrapSuccessReducer<State, Device>(
+    createSuccess: wrapSuccessReducer<State, NormalizedDevice>(
       'create',
       (state, action) => {
         adapter.addOne(state, action.payload)
@@ -61,6 +77,41 @@ const slice = createSlice({
         adapter.removeOne(state, action.payload.id)
       },
     ),
+    addDevicesLabels(
+      state,
+      action: PayloadAction<Dictionary<NormalizedLabel[]>>,
+    ) {
+      const updates = Object.entries(action.payload).map(
+        ([id, labels]) => ({
+          id,
+          changes: {
+            labels: R.uniq([
+              ...(state.entities[id]?.labels ?? []),
+              ...(labels?.map((label) => label.id) ?? []),
+            ]),
+          },
+        }),
+        {},
+      )
+      adapter.updateMany(state, updates)
+    },
+    deleteDevicesLabels(
+      state,
+      action: PayloadAction<Dictionary<NormalizedLabel[]>>,
+    ) {
+      const updates = Object.entries(action.payload).map(([id, labels]) => {
+        const deleteSet = new Set(labels?.map((label) => label.id))
+        return {
+          id,
+          changes: {
+            labels: (state.entities[id]?.labels ?? []).filter(
+              (label) => !deleteSet.has(label),
+            ),
+          },
+        }
+      }, {})
+      adapter.updateMany(state, updates)
+    },
   },
 })
 

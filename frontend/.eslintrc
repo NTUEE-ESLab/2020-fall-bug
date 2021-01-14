@@ -28,6 +28,7 @@
     "react/jsx-props-no-spreading": "off",
     "react/prop-types": "off",
     "react/require-default-props": "off",
+    "jsx-a11y/anchor-is-valid": "off",
     "no-param-reassign": ["error", { "props": false }],
     "no-underscore-dangle": ["error", { "allow": ["__"] }],
     "@typescript-eslint/naming-convention": [

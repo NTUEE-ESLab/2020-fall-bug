@@ -5,9 +5,7 @@ import { Box } from '@chakra-ui/react'
 import BugIcon from '~/components/Icon/Bug'
 import GithubIcon from '~/components/Icon/Github'
 // Constant
-import { BACKEND_ROUTES, ROUTES } from '~/constants'
-// Config
-import config from '~/config'
+import { ROUTES } from '~/constants'
 
 const Header: FC = () => (
   <>
@@ -37,8 +35,10 @@ const Header: FC = () => (
         </Link>
         <Box margin="auto" />
         <Box
-          as="a"
-          href={`${config.backend.endpoint}${BACKEND_ROUTES.OAUTH2_GITHUB}`}
+          // TODO: add oauth2 login
+          // as="a"
+          // href={`${config.backend.uri}${BACKEND_ROUTES.OAUTH2_GITHUB}`}
+          cursor="pointer"
           p="2"
           display="flex"
           alignItems="center"

@@ -1,5 +1,6 @@
 export const ROUTES = {
   HOME: '/',
+  DEVICE: '/device/[id]',
 }
 
 export const BACKEND_ROUTES = {

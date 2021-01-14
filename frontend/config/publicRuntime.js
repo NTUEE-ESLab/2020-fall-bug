@@ -1,6 +1,7 @@
 const config = {
   backend: {
-    endpoint: 'http://localhost:3001',
+    host: 'localhost:3001',
+    uri: 'http://localhost:3001',
   },
 }
 

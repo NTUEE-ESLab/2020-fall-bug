@@ -1,15 +1,10 @@
 import { PayloadAction } from '@reduxjs/toolkit'
 import { takeEvery, call, put } from 'redux-saga/effects'
-import { normalize, schema } from 'normalizr'
-import { actions } from '~/store/device/slice'
+import { normalize } from 'normalizr'
+import { schema, actions } from '~/store/device/slice'
 import api, { PageQuery } from '~/api'
 import { CreateDeviceReq, DeleteDeviceReq } from '~/api/type'
-import { Device } from '~/store/type'
-import { rekeyCamelCase } from '~/util/rekey'
-
-const deviceSchema = new schema.Entity('devices', undefined, {
-  processStrategy: rekeyCamelCase,
-})
+import { NormalizedDevice } from '~/store/type'
 
 function* createDevice({ payload }: PayloadAction<CreateDeviceReq>) {
   try {
@@ -17,7 +12,7 @@ function* createDevice({ payload }: PayloadAction<CreateDeviceReq>) {
     const {
       result,
       entities: { devices },
-    } = normalize<Device>(data?.data ?? [], deviceSchema)
+    } = normalize<NormalizedDevice>(data?.data ?? [], schema)
     if (devices?.[result]) {
       yield put(actions.createSuccess(devices?.[result]))
     } else {
@@ -33,7 +28,7 @@ function* fetchDevices({ payload }: PayloadAction<PageQuery>) {
     const data = yield call(api.listDevice, payload)
     const {
       entities: { devices },
-    } = normalize<Device>(data?.data ?? [], [deviceSchema])
+    } = normalize<NormalizedDevice>(data?.data ?? [], [schema])
     yield put(actions.fetchSuccess(devices ?? {}))
   } catch (error) {
     yield put(actions.fetchFailure({ error }))

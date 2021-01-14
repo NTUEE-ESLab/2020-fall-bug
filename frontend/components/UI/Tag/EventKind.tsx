@@ -1,7 +1,9 @@
 import React from 'react'
 import { Tag, Text, TagProps } from '@chakra-ui/react'
+// Type
+import { EventKind } from '~/store/type'
 
-const EventKindTag = ({ kind, ...props }: TagProps & { kind: string }) => (
+const EventKindTag = ({ kind, ...props }: TagProps & { kind: EventKind }) => (
   <Tag
     {...props}
     fontFamily="Courier New"
