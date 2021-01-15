@@ -1,0 +1,71 @@
+diff --git a/backend/src/schema.rs b/backend/src/schema.rs
+index 9a9183a..9e7e70a 100644
+--- a/backend/src/schema.rs
++++ b/backend/src/schema.rs
+@@ -1,6 +1,9 @@
++#![allow(unused_imports)]
++use serde::{Deserialize, Serialize};
++
+ table! {
+     use diesel::sql_types::*;
+     use diesel::pg::types::sql_types::{Uuid, Jsonb, Timestamptz, Bytea};
+
+     composed_events (id) {
+         id -> Uuid,
+@@ -52,18 +55,19 @@ table! {
+     }
+ }
+
+ table! {
+     use diesel::sql_types::*;
+     use diesel::pg::types::sql_types::{Uuid, Jsonb, Timestamptz, Bytea};
++    use super::EventKindMapping;
+
+     events (id) {
+         id -> Uuid,
+         created_at -> Timestamptz,
+         updated_at -> Timestamptz,
+-        kind -> Event_kind,
++        kind -> EventKindMapping,
+         payload -> Jsonb,
+         started_at -> Timestamptz,
+         ended_at -> Timestamptz,
+         device_id -> Uuid,
+     }
+ }
+@@ -81,18 +85,19 @@ table! {
+     }
+ }
+
+ table! {
+     use diesel::sql_types::*;
+     use diesel::pg::types::sql_types::{Uuid, Jsonb, Timestamptz, Bytea};
++    use super::EventKindMapping;
+
+     labels (id) {
+         id -> Uuid,
+         created_at -> Timestamptz,
+         updated_at -> Timestamptz,
+-        event_kind -> Event_kind,
++        event_kind -> EventKindMapping,
+         name -> Text,
+         description -> Text,
+         rule -> Jsonb,
+         device_id -> Uuid,
+     }
+ }
+@@ -111,6 +116,14 @@ allow_tables_to_appear_in_same_query!(
+     device_credentials,
+     devices,
+     events,
+     events_labels,
+     labels,
+ );
++
++#[derive(DbEnum, Deserialize, Serialize, Clone, PartialEq, Debug)]
++#[serde(rename_all = "snake_case")]
++pub enum EventKind {
++    Sound,
++    Position,
++    Luminosity,
++}
