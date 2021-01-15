@@ -10,6 +10,9 @@
     - [BUG - Backend](#bug---backend)
     - [BUG - Frontend](#bug---frontend)
   - [Proof of Concept](#proof-of-concept)
+  - [Challenge](#challenge)
+    - [Keep TCP Connection Alive](#keep-tcp-connection-alive)
+    - [Data Filtering](#data-filtering)
   - [To Improve](#to-improve)
   - [Credits](#credits)
 
@@ -33,9 +36,7 @@ BUG consists of 3 parts: Bug, Backend, Frontend.
 
 ### BUG - Bug
 
-Bug represents the devices recording events. In this proof of concept, they are STM32L475 serving as position and lumixocity event recorder and RPi3 serving as sound event recorder.
-
-For this proof of concept, we have two MCU serving as Bug
+Bug represents the devices recording events. For this proof of concept, we have two MCU serving as Bug:
 
 - STM32L475
 
@@ -50,7 +51,13 @@ For this proof of concept, we have two MCU serving as Bug
 
 ### BUG - Backend
 
-Backend serves as a TCP/UDP server for devices to report events, and as a RESTful API server for user at browser to interact.
+Backend serves as a TCP/UDP server for devices to report events. Backend also serves as a RESTful API server for user at browser to interact with:
+
+- Create/Read/Delete on devices
+- Read/Subscription on events
+- Create/Read/Delete on labels
+
+After label created, the following events will be checked whether match the rule, if matched, it will be labelled automatically. (not implemented for all events yet)
 
 ### BUG - Frontend
 
@@ -60,14 +67,64 @@ Frontend serves web assets for browser to render. Users can browser the event hi
 
 ![Proof of Concept](./img/proof-of-concept.gif)
 
+## Challenge
+
+### Keep TCP Connection Alive
+
+When integrated with wifi module wifi-ism43362, it has no way to know whether MCU is connected to remote socket. After digging into the source code, I found there is a private member `connected` recording the state of it. So I try to inherit the class `TCPSocket` and utilize the struct layout to peek the state to ensure the connection is alive. For example:
+
+```c++
+#include "TCPSocket.h"
+
+// Copy from ISM43362Interface.cpp. Reference: https://github.com/ARMmbed/wifi-ism43362/blob/3813a4bb8623cc9b0525978748581f60d47142fa/ISM43362Interface.cpp#L301-L308
+struct ISM43362_socket {
+  int _;
+  nsapi_protocol_t __;
+  volatile bool connected;
+};
+
+class TCPClient : protected TCPSocket {
+  bool connected() {
+    return ((struct ISM43362_socket*)_socket)->connected;
+  }
+};
+```
+
+Another challenge I found that I haven't found a way to reconnect to wifi after access point restarts. After digging into the source, I found there is an api to reset the ISM43362 module, after reset and reconnecting works! So I forked the repository to expose the function `reset` of `ISM43362` on class `ISM43362Interface`. Here is the [patch commit](https://github.com/han0110/wifi-ism43362/commit/907dbf0f63a4105dfa250db8919d5f821fcf16ab).
+
+### Data Filtering
+
+For data filtering, I use noise gate algorithm to filter noise. It is implemented as a finite state machine with 3 state `Opened`, `Closing`, `Closed`. With the `Closing` state design, it can effectively prevent signal from split into too much fragment. Here is the pseudo code for next state:
+
+```python
+enum State { Opened, Closing, Closed }
+
+def next_state(value):
+  over_threshold = value > threshold
+
+  if state is Opened and not over_threshold:
+    state = Closing
+    remaining_release_count = release_count
+  elif state is Closing:
+    if over_threshold:
+      state = Opened
+    else:
+      if remaining_release_count == 0:
+        state = Closed
+      else:
+        remaining_release_count -= 1
+  elif state is Closed and over_threshold:
+    state = Opened
+```
+
 ## To Improve
 
 - Implement luminosity tracker
 - Implement auto event labelling
-- Implement composed events composing
+- Implement composed event composing
 - Implement email notification and push notification
 - Use TLS/DTLS between Bug and Backend
-- Offline mode
+- Offline mode for Bug
 
 ## Credits
 
