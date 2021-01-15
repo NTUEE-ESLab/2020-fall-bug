@@ -63,6 +63,7 @@ Frontend serves web assets for browser to render. Users can browser the event hi
 ## To Improve
 
 - Implement luminosity tracker
+- Implement auto event labelling
 - Implement composed events composing
 - Implement email notification and push notification
 - Use TLS/DTLS between Bug and Backend
