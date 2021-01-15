@@ -1,17 +1,16 @@
-# BUG - Be Ur Guard
+![BUG](https://raw.githubusercontent.com/NTUEE-ESLab/2020-fall-bug/master/img/bug.png)
 
 ## Table of Contents
 
-- [BUG - Be Ur Guard](#bug---be-ur-guard)
-  - [Table of Contents](#table-of-contents)
-  - [Why Making BUG](#why-making-bug)
-  - [How BUG Works](#how-bug-works)
-    - [BUG - Bug](#bug---bug)
-    - [BUG - Backend](#bug---backend)
-    - [BUG - Frontend](#bug---frontend)
-  - [Proof of Concept](#proof-of-concept)
-  - [To Improve](#to-improve)
-  - [Credits](#credits)
+- [Table of Contents](#table-of-contents)
+- [Why Making BUG](#why-making-bug)
+- [How BUG Works](#how-bug-works)
+  - [BUG - Bug](#bug---bug)
+  - [BUG - Backend](#bug---backend)
+  - [BUG - Frontend](#bug---frontend)
+- [Proof of Concept](#proof-of-concept)
+- [To Improve](#to-improve)
+- [Credits](#credits)
 
 ## Why Making BUG
 
